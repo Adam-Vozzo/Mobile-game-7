@@ -7,6 +7,7 @@
     COL: {
       bg: "#0c0905",
       bgCenter: "#1d1206",
+      rock: "#23180b", // tint filling solid terrain (distinct from caverns)
       vignette: "rgba(3,2,0,0.55)",
       dim: "#5e3712",
       line: "#c2611a",
@@ -15,7 +16,7 @@
       crystal: "#ffce7a",
       catalyst: "#fff3cf",
       bot: "#e88a34",
-      mineralDot: "#8a4a18",
+      mineralDot: "#d2922f",
       crystalDot: "#ffce7a",
       catalystDot: "#fff3cf",
       beam: "#ffcf9a",
@@ -25,6 +26,7 @@
       grid: "#ff8200",
       sweep: "#ffa64d",
       cable: "#c2611a",
+      charge: "#ffe6b0",
       energy: "#ffffff",
     },
 

@@ -42,18 +42,20 @@
     this.thrusting = thrust;
     const nx = Math.cos(this.angle),
       ny = Math.sin(this.angle);
-    this.vx += nx * stats.accel * moveMult * thrust * dt;
-    this.vy += ny * stats.accel * moveMult * thrust * dt;
-
-    // --- drag (heavier in rock); higher base retention => more momentum ---
+    // center inside solid terrain => move 90% slower
     const dens = world.densityAt(this.x, this.y);
+    const rockMult = dens > T ? 0.1 : 1;
+    this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
+    this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
+
+    // --- drag (higher base retention => more momentum) ---
     let keep = Math.pow(P.drag, dt * 60);
-    if (dens > T) keep *= Math.pow(0.62, dt * 60 * ((dens - T) / (1 - T)));
+    if (dens > T) keep *= Math.pow(0.5, dt * 60);
     this.vx *= keep;
     this.vy *= keep;
 
     const sp = Math.hypot(this.vx, this.vy);
-    const lim = stats.maxSpeed * moveMult * (dens > T ? 0.55 : 1);
+    const lim = stats.maxSpeed * moveMult * rockMult;
     if (sp > lim) {
       this.vx = (this.vx / sp) * lim;
       this.vy = (this.vy / sp) * lim;
@@ -190,7 +192,7 @@
     }
   };
 
-  Bot.prototype._steerTo = function (tx, ty, dt, bstats, world) {
+  Bot.prototype._steerTo = function (tx, ty, dt, bstats, world, ignoreRock) {
     const dir = Math.atan2(ty - this.y, tx - this.x);
     const speed = bstats.botSpeed;
     const dvx = Math.cos(dir) * speed,
@@ -198,9 +200,16 @@
     const k = Math.min(1, 5 * dt);
     this.vx += (dvx - this.vx) * k;
     this.vy += (dvy - this.vy) * k;
-    // soft collision: chip along walls instead of ghosting through rock
     const nx = this.x + this.vx * dt,
       ny = this.y + this.vy * dt;
+    if (ignoreRock) {
+      // returning bots phase home so they never get stuck on terrain
+      this.x = nx;
+      this.y = ny;
+      if (this.vx || this.vy) this.angle = Math.atan2(this.vy, this.vx);
+      return;
+    }
+    // soft collision: chip along walls instead of ghosting through rock
     if (world.densityAt(nx, ny) <= T) {
       this.x = nx;
       this.y = ny;
@@ -258,7 +267,7 @@
         this.hasTarget = false;
       }
     } else {
-      this._steerTo(home.x, home.y, dt, bstats, world);
+      this._steerTo(home.x, home.y, dt, bstats, world, true);
       if (U.dist(this.x, this.y, home.x, home.y) < CFG.bot.depositRange * bstats.sqrtI) {
         game.addResources(this.carry.m, this.carry.c, this.carry.k, true);
         game.spawnDeposit(home.x, home.y);

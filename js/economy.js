@@ -50,7 +50,7 @@
       carveR: CFG.laser.carveR0 * Math.pow(I, inf.carveExp),
       yield: CFG.laser.yield0 * (1 + 0.5 * L.laserEff) * (state.yieldMult || 1),
       baseRange: CFG.base.range0 * sI * (1 + 0.3 * L.baseRange),
-      energyMax: CFG.player.maxEnergy0 * sI,
+      energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.35 * L.baseRange),
     };
   };
 
@@ -95,7 +95,7 @@
       { id: "laserPower", name: "Laser Power", desc: "Carve rock faster." },
       { id: "laserRange", name: "Laser Range", desc: "Reach deposits from farther away." },
       { id: "laserEff", name: "Refinement", desc: "Extract more minerals per carve." },
-      { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field around your base." },
+      { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field and raise your energy capacity." },
       { id: "influence", name: "Influence", desc: "Grow your scale. Mine larger regions; the core shrinks around you. Needs Catalyst." },
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
     ],

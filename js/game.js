@@ -382,22 +382,57 @@
   Game.prototype.drawCable = function (ctx, iw, ih) {
     if (!this.cable.active) return;
     const cam = this.cam;
+    const segs = this.cable.segs;
+    const pts = this._cablePts || (this._cablePts = []);
+    for (let i = 0; i < segs; i++) {
+      const p = this.cable.pts[i];
+      const s = cam.worldToScreen(p.x, p.y, iw, ih);
+      if (!pts[i]) pts[i] = { x: 0, y: 0 };
+      pts[i].x = s.x;
+      pts[i].y = s.y;
+    }
     ctx.save();
     ctx.strokeStyle = COL.cable;
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = 0.7;
     if (CFG.render.glow) {
       ctx.shadowColor = COL.bright;
       ctx.shadowBlur = 2;
     }
     ctx.beginPath();
-    for (let i = 0; i < this.cable.segs; i++) {
-      const p = this.cable.pts[i];
-      const s = cam.worldToScreen(p.x, p.y, iw, ih);
-      if (i === 0) ctx.moveTo(s.x, s.y);
-      else ctx.lineTo(s.x, s.y);
-    }
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < segs; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
+
+    // charge pulses flowing base -> ship while actually recharging
+    if (this.player.inBase && this.player.energy < this.player.maxEnergy - 0.5) {
+      const segLen = this._cableLen || (this._cableLen = []);
+      let total = 0;
+      for (let i = 0; i < segs - 1; i++) {
+        const dx = pts[i + 1].x - pts[i].x,
+          dy = pts[i + 1].y - pts[i].y;
+        segLen[i] = Math.hypot(dx, dy);
+        total += segLen[i];
+      }
+      const spacing = 9;
+      const phase = (this.time * 26) % spacing;
+      ctx.fillStyle = COL.charge;
+      ctx.shadowColor = COL.charge;
+      ctx.shadowBlur = 3;
+      for (let off = phase; off < total; off += spacing) {
+        let dleft = off,
+          k = 0;
+        while (k < segs - 1 && dleft > segLen[k]) {
+          dleft -= segLen[k];
+          k++;
+        }
+        if (k >= segs - 1) break;
+        const t = segLen[k] > 0 ? dleft / segLen[k] : 0;
+        const x = pts[k].x + (pts[k + 1].x - pts[k].x) * t;
+        const y = pts[k].y + (pts[k + 1].y - pts[k].y) * t;
+        ctx.fillRect(x | 0, y | 0, 1, 1);
+      }
+    }
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
     ctx.restore();

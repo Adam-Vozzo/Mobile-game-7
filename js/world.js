@@ -183,6 +183,10 @@
     const across = i1 - i0;
     const step = Math.max(1, Math.ceil(across / this.cfg.maxRenderCells));
 
+    // Rock fill can be coarser than the contour without hurting the look,
+    // which keeps the far-zoom (whole-core) view fast.
+    const fillStep = Math.max(step, Math.ceil(across / 64));
+    this._fillRock(ctx, cam, vw, vh, i0, i1, j0, j1, fillStep);
     this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
 
     const COL = G.CFG.COL;
@@ -190,7 +194,7 @@
     ctx.strokeStyle = COL.line;
     if (G.CFG.render.glow) {
       ctx.shadowColor = COL.bright;
-      ctx.shadowBlur = 2;
+      ctx.shadowBlur = 3; // bleeds onto the rock fill -> inner-glow edge
     }
     ctx.beginPath();
     const seg = (ax, ay, bx, by) => {
@@ -250,6 +254,77 @@
     ctx.shadowBlur = 0;
   };
 
+  // Fill solid terrain with a warm tint (distinct from the dark caverns). The
+  // contour stroke's glow then bleeds onto this fill, reading as an edge glow.
+  World.prototype._fillRock = function (ctx, cam, vw, vh, i0, i1, j0, j1, step) {
+    const P = this.P,
+      d = this.density,
+      th = this.cfg.threshold;
+    const camx = cam.x,
+      camy = cam.y,
+      scale = cam.scale,
+      hw = vw * 0.5,
+      hh = vh * 0.5;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = G.CFG.COL.rock;
+    ctx.beginPath();
+    for (let j = j0; j < j1; j += step) {
+      const jj = Math.min(j + step, this.NY);
+      const sy0 = hh + (this.worldY(j) - camy) * scale;
+      const syH = (this.worldY(jj) - this.worldY(j)) * scale;
+      let runStart = -1,
+        runEnd = -1; // run of fully-solid cells -> one wide rect
+      for (let i = i0; i < i1; i += step) {
+        const ii = Math.min(i + step, this.NX);
+        const va = d[j * P + i],
+          vb = d[j * P + ii],
+          vc = d[jj * P + ii],
+          vd = d[jj * P + i];
+        const c0 = va > th,
+          c1 = vb > th,
+          c2 = vc > th,
+          c3 = vd > th;
+        const mask = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
+        if (mask === 15) {
+          if (runStart < 0) runStart = i;
+          runEnd = ii;
+          continue;
+        }
+        if (runStart >= 0) {
+          const rx0 = hw + (this.worldX(runStart) - camx) * scale;
+          ctx.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
+          runStart = -1;
+        }
+        if (mask === 0) continue;
+        const wx0 = this.worldX(i),
+          wx1 = this.worldX(ii),
+          wy0 = this.worldY(j),
+          wy1 = this.worldY(jj);
+        const poly = [];
+        if (c0) poly.push(wx0, wy0);
+        if (c0 !== c1) poly.push(U.lerp(wx0, wx1, (th - va) / (vb - va)), wy0);
+        if (c1) poly.push(wx1, wy0);
+        if (c1 !== c2) poly.push(wx1, U.lerp(wy0, wy1, (th - vb) / (vc - vb)));
+        if (c2) poly.push(wx1, wy1);
+        if (c2 !== c3) poly.push(U.lerp(wx1, wx0, (th - vc) / (vd - vc)), wy1);
+        if (c3) poly.push(wx0, wy1);
+        if (c3 !== c0) poly.push(wx0, U.lerp(wy1, wy0, (th - vd) / (va - vd)));
+        if (poly.length >= 6) {
+          ctx.moveTo(hw + (poly[0] - camx) * scale, hh + (poly[1] - camy) * scale);
+          for (let p = 2; p < poly.length; p += 2) ctx.lineTo(hw + (poly[p] - camx) * scale, hh + (poly[p + 1] - camy) * scale);
+          ctx.closePath();
+        }
+      }
+      if (runStart >= 0) {
+        const rx0 = hw + (this.worldX(runStart) - camx) * scale;
+        ctx.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
+      }
+    }
+    ctx.fill();
+    ctx.restore();
+  };
+
   // World-anchored dots (stable while panning): stars only in cleared caverns,
   // ore glints only on solid rock. Catalyst specks twinkle.
   World.prototype._renderDots = function (ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time) {
@@ -301,9 +376,11 @@
           } else if (this.crystal[id] && h < 0.32) {
             ctx.fillStyle = COL.crystalDot;
             ctx.fillRect(sx, sy, 1, 1);
-          } else if (this.richness[id] > 0.45 && h < 0.34) {
+          } else if (this.richness[id] > 0.5 && h < 0.42) {
+            // ore: larger + clustered so it doesn't read like a star
             ctx.fillStyle = COL.mineralDot;
-            ctx.fillRect(sx, sy, 1, 1);
+            ctx.fillRect(sx, sy, 2, 2);
+            if (h < 0.16) ctx.fillRect(sx + 2, sy + (h < 0.08 ? 1 : 0), 1, 1);
           }
         }
       }

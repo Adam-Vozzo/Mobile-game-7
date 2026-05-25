@@ -95,7 +95,7 @@
   };
 
   Input.prototype._begin = function (id, x, y, w, h) {
-    const movementZone = x < w * 0.55; // left side steers
+    const movementZone = true; // drag anywhere to steer; quick taps still interact
     const cand = { id, x0: x, y0: y, x, y, t0: U.now(), moved: false, isJoy: false, movementZone };
     if (movementZone) {
       this._touch = id;
