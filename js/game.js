@@ -5,18 +5,19 @@
   const CFG = G.CFG;
   const COL = CFG.COL;
   const Eco = G.Economy;
+  const TAU = U.TAU;
 
   function Game() {
     this.state = Eco.defaultState();
-    this.state.yieldMult = 1;
-    this.state.ascends = 0;
     this.stats = Eco.derive(this.state);
     this.factories = [];
     this.particles = [];
+    this.cable = new G.Rope(16);
     this.botIncomeEMA = 0;
     this._botAccum = 0;
     this._secTimer = 0;
     this._saveTimer = 0;
+    this._hintTimer = 0;
     this.won = false;
     this.time = 0;
   }
@@ -57,13 +58,17 @@
     this.player = new G.Player(0, 0);
     this.factories = [];
     this.recomputeStats();
-    G.UI.toast("Steer with the left side. Aim the laser at rock. Tap BASE to upgrade.", 6000);
+    this.player.energy = this.stats.energyMax;
+    G.UI.toast("Steer with the left side. Aim the laser at rock. Stay near BASE to recharge & upgrade.", 6500);
   };
 
   Game.prototype.loadFrom = function (data) {
     this.state = data.econ;
+    const def = Eco.defaultState();
+    if (this.state.catalyst == null) this.state.catalyst = 0;
     if (this.state.yieldMult == null) this.state.yieldMult = 1;
     if (this.state.ascends == null) this.state.ascends = 0;
+    for (const k in def.levels) if (this.state.levels[k] == null) this.state.levels[k] = 0;
     this.world = new G.World(data.seed >>> 0);
     if (data.density) G.Save.applyDensity(this.world, data.density);
     if (typeof data.removed === "number") this.world.removedTotal = data.removed;
@@ -75,13 +80,15 @@
     if (data.factories) {
       for (const f of data.factories) {
         const fac = new G.Factory(f.x, f.y, f.seed >>> 0);
-        const n = Math.min(f.bots || 0, Math.floor(this.stats.botBay));
+        if (f.levels) fac.levels = f.levels;
+        fac.recompute(this.stats.influence);
+        const n = Math.min(f.bots || 0, Math.floor(fac.botStats.botBay));
         for (let i = 0; i < n; i++) fac.bots.push(new G.Bot(fac.x, fac.y, fac, (fac.seed + i * 7919) >>> 0));
         this.factories.push(fac);
       }
     }
+    this.player.energy = data.energy != null ? data.energy : this.stats.energyMax;
     this.botIncomeEMA = data.botIncome || 0;
-    // Offline income.
     const elapsed = U.clamp((Date.now() - (data.t || Date.now())) / 1000, 0, 8 * 3600);
     if (elapsed > 5 && this.botIncomeEMA > 0) {
       const gained = this.botIncomeEMA * elapsed * 0.6;
@@ -96,60 +103,76 @@
 
   Game.prototype.recomputeStats = function () {
     this.stats = Eco.derive(this.state);
-    this.stats.yield *= this.state.yieldMult || 1;
+    for (const f of this.factories) f.recompute(this.stats.influence);
   };
 
-  Game.prototype.addResources = function (m, c, fromBot) {
+  Game.prototype.addResources = function (m, c, k, fromBot) {
     this.state.minerals += m;
     this.state.crystals += c;
+    this.state.catalyst += k || 0;
     if (fromBot) this._botAccum += m;
   };
 
-  Game.prototype.buyUpgrade = function (id) {
-    if (!Eco.canAfford(this.state, id)) return false;
-    if (id === "factory") {
-      Eco.purchase(this.state, id);
+  Game.prototype.buyUpgrade = function (id, building) {
+    if (Eco.FACTORY_UPGRADES.indexOf(id) >= 0) {
+      if (!building || !building.levels) return false;
+      const cost = Eco.cost(id, building.levels[id]);
+      if (!Eco.canPay(this.state, cost)) return false;
+      Eco.pay(this.state, cost);
+      building.levels[id]++;
+      building.recompute(this.stats.influence);
+    } else if (id === "factory") {
+      const cost = Eco.cost("factory", this.state.levels.factory);
+      if (!Eco.canPay(this.state, cost)) return false;
+      Eco.pay(this.state, cost);
+      this.state.levels.factory++;
       this.spawnFactory(this.player.x, this.player.y);
     } else {
-      Eco.purchase(this.state, id);
+      const cost = Eco.cost(id, this.state.levels[id]);
+      if (!Eco.canPay(this.state, cost)) return false;
+      Eco.pay(this.state, cost);
+      this.state.levels[id]++;
     }
     this.recomputeStats();
-    if (id === "influence") G.UI.toast("Influence grown to x" + U.formatNum(this.stats.influence), 2500);
+    if (id === "influence") G.UI.toast("Influence grown to ◎" + U.formatNum(this.stats.influence), 2500);
     G.UI.updateHUD(this);
     return true;
   };
 
   Game.prototype.spawnFactory = function (x, y) {
     const fac = new G.Factory(x, y, (Math.random() * 1e9) >>> 0);
+    fac.recompute(this.stats.influence);
     this.world.clearCircle(x, y, 22 * this.stats.sqrtI);
     this.factories.push(fac);
-    G.UI.toast("Factory deployed. It will assemble mining bots.", 3000);
+    G.UI.toast("Factory deployed. It assembles & upgrades its own bots.", 3000);
   };
 
   Game.prototype.ascend = function () {
     const bonus = 0.5;
-    this.state.ascends = (this.state.ascends || 0) + 1;
-    this.state.yieldMult = (this.state.yieldMult || 1) * (1 + bonus);
-    this.state.minerals = 0;
-    this.state.crystals = 0;
-    this.state.levels = Eco.defaultState().levels;
+    const ascends = (this.state.ascends || 0) + 1;
+    const yieldMult = (this.state.yieldMult || 1) * (1 + bonus);
+    this.state = Eco.defaultState();
+    this.state.ascends = ascends;
+    this.state.yieldMult = yieldMult;
     this.world = new G.World((Math.random() * 1e9) >>> 0);
     this.player = new G.Player(0, 0);
     this.factories = [];
     this.particles = [];
+    this.cable.active = false;
     this.won = false;
     this.recomputeStats();
+    this.player.energy = this.stats.energyMax;
     this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);
-    G.UI.toast("ASCENDED x" + this.state.ascends + " — permanent +" + Math.round(bonus * 100) + "% yield. New core seeded.", 6000);
+    G.UI.toast("ASCENDED x" + ascends + " — permanent +" + Math.round(bonus * 100) + "% yield. New core seeded.", 6000);
   };
 
   // ---- particles ----
   Game.prototype.spawnSpark = function (x, y) {
-    if (this.particles.length > 220) return;
+    if (this.particles.length > 240) return;
     if (Math.random() > 0.45) return;
-    const a = Math.random() * U.TAU;
+    const a = Math.random() * TAU;
     const s = 20 + Math.random() * 40;
     this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.4 + Math.random() * 0.3, max: 0.7, c: COL.beam });
   };
@@ -176,19 +199,32 @@
   Game.prototype.buildings = function () {
     return [this.base].concat(this.factories);
   };
+  Game.prototype.interactRadius = function (b) {
+    return b.panel === "base" ? this.stats.baseRange : CFG.interactRange * this.stats.sqrtI;
+  };
+  Game.prototype._nearestBuilding = function (x, y) {
+    let best = null,
+      bd = Infinity;
+    for (const b of this.buildings()) {
+      const d = U.dist(x, y, b.x, b.y);
+      if (d <= this.interactRadius(b) && d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    return best;
+  };
 
   Game.prototype.handleInput = function () {
-    // Interact key: open nearest building in range.
     if (this.input.consumeInteract()) {
-      const near = this._nearestBuilding(this.player.x, this.player.y, CFG.interactRange * this.stats.sqrtI);
+      const near = this._nearestBuilding(this.player.x, this.player.y);
       if (near) {
         if (G.UI.open && G.UI.building === near) G.UI.close();
         else G.UI.openPanel(near.panel, near, this);
       } else {
-        G.UI.toggleBase(this);
+        G.UI.toast("Move within range of a base or factory to access its controls.", 2200);
       }
     }
-    // Taps: hit-test buildings in screen space.
     const taps = this.input.consumeTaps();
     for (const tap of taps) {
       const ix = (tap.x / this.cssW) * this.iw;
@@ -202,35 +238,36 @@
           break;
         }
       }
-      if (hit) G.UI.openPanel(hit.panel, hit, this);
-    }
-  };
-
-  Game.prototype._nearestBuilding = function (x, y, range) {
-    let best = null,
-      bd = range * range;
-    for (const b of this.buildings()) {
-      const d = U.dist2(x, y, b.x, b.y);
-      if (d < bd) {
-        bd = d;
-        best = b;
+      if (hit) {
+        if (U.dist(this.player.x, this.player.y, hit.x, hit.y) <= this.interactRadius(hit)) {
+          G.UI.openPanel(hit.panel, hit, this);
+        } else {
+          G.UI.toast("Move closer to the " + (hit.panel === "base" ? "base" : "factory") + " to access controls.", 2200);
+        }
       }
     }
-    return best;
   };
 
   // ---- main update ----
   Game.prototype.simulate = function (dt, frozen) {
     this.time += dt;
     this.base.update(dt);
-    for (const f of this.factories) f.update(dt, this.stats, this.world, this);
+    for (const f of this.factories) f.update(dt, this);
     if (!frozen) this.player.update(dt, this.input, this.stats, this.world, this);
     this.updateParticles(dt);
+
+    // recharge cable
+    if (this.player.inBase) {
+      if (!this.cable.active) this.cable.reset(this.base.x, this.base.y, this.player.x, this.player.y);
+      this.cable.update(this.base.x, this.base.y, this.player.x, this.player.y, Math.min(dt, 0.05));
+    } else {
+      this.cable.active = false;
+    }
+
     const vx = frozen ? 0 : this.player.vx,
       vy = frozen ? 0 : this.player.vy;
     this.cam.update(dt, this.player.x, this.player.y, vx, vy, this.stats.influence, this.iw);
 
-    // Bot income EMA (for offline calc) + autosave.
     this._secTimer += dt;
     if (this._secTimer >= 1) {
       this.botIncomeEMA = U.lerp(this.botIncomeEMA, this._botAccum / this._secTimer, 0.4);
@@ -245,9 +282,8 @@
       G.Save.save(this);
     }
 
-    // Proximity prompt + win check.
     if (!frozen) {
-      const near = this._nearestBuilding(this.player.x, this.player.y, CFG.interactRange * this.stats.sqrtI);
+      const near = this._nearestBuilding(this.player.x, this.player.y);
       G.UI.setPrompt(near ? (near.panel === "base" ? "Tap base · or press E" : "Tap factory · or press E") : null);
     } else {
       G.UI.setPrompt(null);
@@ -282,18 +318,17 @@
     const ctx = this.ictx,
       iw = this.iw,
       ih = this.ih;
-    // Background with a soft central glow.
     const g = ctx.createRadialGradient(iw / 2, ih / 2, 0, iw / 2, ih / 2, Math.max(iw, ih) * 0.7);
     g.addColorStop(0, COL.bgCenter);
     g.addColorStop(1, COL.bg);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, iw, ih);
 
-    this.world.render(ctx, this.cam, iw, ih);
+    this.drawGrid(ctx, iw, ih);
+    this.world.render(ctx, this.cam, iw, ih, this.time);
     this.drawEntities(ctx, iw, ih);
     this.drawParticles(ctx, iw, ih);
 
-    // Upscale to the display canvas (crisp chunky pixels).
     const d = this.dctx;
     d.imageSmoothingEnabled = false;
     d.clearRect(0, 0, this.backingW, this.backingH);
@@ -301,20 +336,71 @@
     this.drawOverlay(d);
   };
 
+  Game.prototype.drawGrid = function (ctx, iw, ih) {
+    const gr = CFG.render.grid;
+    ctx.save();
+    ctx.globalAlpha = gr.alpha;
+    ctx.fillStyle = COL.grid;
+    for (let y = 1; y < ih; y += gr.spacing) {
+      for (let x = 1; x < iw; x += gr.spacing) ctx.fillRect(x, y, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  };
+
   Game.prototype.drawEntities = function (ctx, iw, ih) {
     const cam = this.cam;
-    // Factories
+    const bp = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
+
+    // base range field
+    const rr = this.stats.baseRange * cam.scale;
+    if (rr > 6 && rr < Math.max(iw, ih) * 1.5) {
+      ctx.save();
+      ctx.strokeStyle = COL.dim;
+      ctx.globalAlpha = 0.5;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.arc(bp.x, bp.y, rr, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
     for (const f of this.factories) {
       const sp = cam.worldToScreen(f.x, f.y, iw, ih);
       this.drawFactory(ctx, sp.x, sp.y, Math.max(f.r * cam.scale, 6), f.spin);
       for (const b of f.bots) this.drawBot(ctx, b, iw, ih);
     }
-    // Base
-    const bp = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
-    this.drawBase(ctx, bp.x, bp.y, Math.max(this.base.r * cam.scale, 9), this.base.spin);
-    // Player + beam
+
+    this.drawBase(ctx, bp.x, bp.y, Math.max(this.base.r * cam.scale, 9));
+    this.drawCable(ctx, iw, ih);
     this.drawBeam(ctx, iw, ih);
     this.drawShip(ctx, iw, ih);
+  };
+
+  Game.prototype.drawCable = function (ctx, iw, ih) {
+    if (!this.cable.active) return;
+    const cam = this.cam;
+    ctx.save();
+    ctx.strokeStyle = COL.cable;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.75;
+    if (CFG.render.glow) {
+      ctx.shadowColor = COL.bright;
+      ctx.shadowBlur = 2;
+    }
+    ctx.beginPath();
+    for (let i = 0; i < this.cable.segs; i++) {
+      const p = this.cable.pts[i];
+      const s = cam.worldToScreen(p.x, p.y, iw, ih);
+      if (i === 0) ctx.moveTo(s.x, s.y);
+      else ctx.lineTo(s.x, s.y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.restore();
   };
 
   Game.prototype.drawBeam = function (ctx, iw, ih) {
@@ -332,11 +418,9 @@
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(c.x, c.y);
     ctx.stroke();
-    // impact flare
     ctx.fillStyle = COL.player;
-    const fr = 1 + Math.sin(this.time * 30) * 0.6 + 1.5;
     ctx.beginPath();
-    ctx.arc(c.x, c.y, fr, 0, U.TAU);
+    ctx.arc(c.x, c.y, 2 + Math.abs(Math.sin(this.time * 30)) * 0.8, 0, TAU);
     ctx.fill();
     ctx.restore();
   };
@@ -346,10 +430,9 @@
     const cam = this.cam;
     const sp = cam.worldToScreen(p.x, p.y, iw, ih);
     const r = Math.max(this.stats.playerRadius * cam.scale, 3.5);
-    const a = p.angle;
     ctx.save();
     ctx.translate(sp.x, sp.y);
-    ctx.rotate(a);
+    ctx.rotate(p.angle);
     ctx.strokeStyle = COL.player;
     ctx.fillStyle = COL.bg;
     ctx.lineWidth = 1;
@@ -365,14 +448,34 @@
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    // thrust flame
-    if (p.thrusting > 0.05) {
+    if (p.thrusting > 0.05 && p.energy > 0) {
       ctx.strokeStyle = COL.bright;
       ctx.beginPath();
       ctx.moveTo(-r * 0.5, 0);
       ctx.lineTo(-r - r * 1.3 * p.thrusting * (0.7 + Math.random() * 0.6), 0);
       ctx.stroke();
     }
+    ctx.restore();
+
+    // energy bar (white vertical, to the screen-right of the ship)
+    const frac = U.clamp(p.maxEnergy > 0 ? p.energy / p.maxEnergy : 0, 0, 1);
+    const bh = Math.max(r * 2.6, 11);
+    const bw = Math.max(r * 0.34, 2);
+    const bx = sp.x + r * 1.9;
+    const by = sp.y - bh / 2;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillRect(bx, by, bw, bh);
+    let col = COL.energy;
+    if (frac <= CFG.player.energyLow) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 9);
+      col = pulse > 0.5 ? COL.danger : "#ffffff";
+      ctx.shadowColor = COL.danger;
+      ctx.shadowBlur = 3;
+    }
+    ctx.fillStyle = col;
+    const fh = bh * frac;
+    ctx.fillRect(bx, by + (bh - fh), bw, fh);
     ctx.restore();
   };
 
@@ -394,13 +497,22 @@
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-    if (b.mode === "mine") {
-      ctx.fillStyle = COL.beam;
-      ctx.fillRect(sp.x - 1, sp.y - 1, 2, 2);
+    if (b.beam) {
+      const m = this.cam.worldToScreen(b.mineX, b.mineY, iw, ih);
+      ctx.save();
+      ctx.strokeStyle = COL.beam;
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
     }
   };
 
-  Game.prototype.drawBase = function (ctx, x, y, r, spin) {
+  Game.prototype.drawBase = function (ctx, x, y, r) {
     ctx.save();
     ctx.strokeStyle = COL.bright;
     ctx.lineWidth = 1;
@@ -408,17 +520,14 @@
       ctx.shadowColor = COL.bright;
       ctx.shadowBlur = 4;
     }
-    // main ring
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, U.TAU);
+    ctx.arc(x, y, r, 0, TAU);
     ctx.stroke();
-    // pulsing inner core
     const pr = r * (0.32 + 0.06 * Math.sin(this.time * 2));
     ctx.fillStyle = COL.bright;
     ctx.beginPath();
-    ctx.arc(x, y, Math.max(pr, 1.5), 0, U.TAU);
+    ctx.arc(x, y, Math.max(pr, 1.5), 0, TAU);
     ctx.fill();
-    // attached node (echoes the reference art)
     const nx = x - r * 1.5,
       ny = y - r * 0.15;
     ctx.beginPath();
@@ -426,7 +535,7 @@
     ctx.lineTo(nx + r * 0.4, ny);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(nx, ny, r * 0.4, 0, U.TAU);
+    ctx.arc(nx, ny, r * 0.4, 0, TAU);
     ctx.stroke();
     ctx.restore();
   };
@@ -443,10 +552,10 @@
     ctx.translate(x, y);
     ctx.rotate(spin);
     ctx.beginPath();
-    ctx.arc(0, 0, r, 0, U.TAU);
+    ctx.arc(0, 0, r, 0, TAU);
     ctx.stroke();
     for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * U.TAU;
+      const a = (i / 4) * TAU;
       ctx.beginPath();
       ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
       ctx.lineTo(Math.cos(a) * r * 1.4, Math.sin(a) * r * 1.4);
@@ -469,22 +578,37 @@
   };
 
   Game.prototype.drawOverlay = function (d) {
-    // Virtual joystick (drawn in backing px; input coords are CSS px).
-    const sx = this.backingW / this.cssW;
+    // slow top->bottom light sweep
+    const sw = CFG.render.sweep;
+    const bandH = this.backingH * sw.band;
+    const t = (this.time % sw.period) / sw.period;
+    const cy = t * (this.backingH + bandH) - bandH / 2;
+    const grad = d.createLinearGradient(0, cy - bandH / 2, 0, cy + bandH / 2);
+    grad.addColorStop(0, "rgba(255,166,77,0)");
+    grad.addColorStop(0.5, "rgba(255,166,77," + sw.alpha + ")");
+    grad.addColorStop(1, "rgba(255,166,77,0)");
+    d.save();
+    d.globalCompositeOperation = "lighter";
+    d.fillStyle = grad;
+    d.fillRect(0, cy - bandH / 2, this.backingW, bandH);
+    d.restore();
+
+    // virtual joystick
+    const scl = this.backingW / this.cssW;
     if (this.input.joyActive) {
-      const bx = this.input.joyBase.x * sx,
-        by = this.input.joyBase.y * sx;
-      const kx = this.input.joyKnob.x * sx,
-        ky = this.input.joyKnob.y * sx;
+      const bx = this.input.joyBase.x * scl,
+        by = this.input.joyBase.y * scl;
+      const kx = this.input.joyKnob.x * scl,
+        ky = this.input.joyKnob.y * scl;
       d.save();
-      d.strokeStyle = "rgba(116,224,255,0.35)";
-      d.lineWidth = 2 * sx;
+      d.strokeStyle = "rgba(255,154,54,0.35)";
+      d.lineWidth = 2 * scl;
       d.beginPath();
-      d.arc(bx, by, this.input.maxRadius * sx, 0, U.TAU);
+      d.arc(bx, by, this.input.maxRadius * scl, 0, TAU);
       d.stroke();
-      d.fillStyle = "rgba(116,224,255,0.5)";
+      d.fillStyle = "rgba(255,154,54,0.5)";
       d.beginPath();
-      d.arc(kx, ky, 14 * sx, 0, U.TAU);
+      d.arc(kx, ky, 14 * scl, 0, TAU);
       d.fill();
       d.restore();
     }
@@ -497,9 +621,9 @@
       this.render();
       return;
     }
-    if (dt > 0.1) dt = 0.1; // clamp after tab stalls
+    if (dt > 0.1) dt = 0.1;
     this.handleInput();
-    this.simulate(dt, G.UI.open); // world keeps running; ship freezes while menuing
+    this.simulate(dt, G.UI.open);
     this.render();
   };
 

@@ -26,14 +26,15 @@
       const u8 = new Uint8Array(dens.length);
       for (let i = 0; i < dens.length; i++) u8[i] = Math.round(dens[i] * 255);
       const data = {
-        v: 1,
+        v: 2,
         t: Date.now(),
         seed: g.world.seed,
         econ: g.state,
         removed: g.world.removedTotal,
         botIncome: g.botIncomeEMA || 0,
+        energy: g.player.energy,
         player: { x: g.player.x, y: g.player.y, angle: g.player.angle },
-        factories: g.factories.map((f) => ({ x: f.x, y: f.y, seed: f.seed, bots: f.bots.length })),
+        factories: g.factories.map((f) => ({ x: f.x, y: f.y, seed: f.seed, bots: f.bots.length, levels: f.levels })),
         density: b64encode(u8),
       };
       localStorage.setItem(G.CFG.save.key, JSON.stringify(data));

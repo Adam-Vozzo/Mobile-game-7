@@ -1,4 +1,5 @@
 // Resources, upgrade definitions, derived stats, and purchasing.
+// Global upgrades live on state.levels; bot upgrades live per-factory.
 (function (G) {
   "use strict";
   const CFG = G.CFG;
@@ -9,26 +10,29 @@
     return {
       minerals: 0,
       crystals: 0,
+      catalyst: 0,
+      yieldMult: 1,
+      ascends: 0,
       levels: {
         laserPower: 0,
         laserRange: 0,
         laserEff: 0,
+        baseRange: 0,
         influence: 0,
-        factory: 0, // number of factories built (drives factory cost)
-        botSpeed: 0,
-        botPower: 0,
-        botCapacity: 0,
-        botBay: 0,
+        factory: 0, // number of factories built (drives factory build cost)
       },
     };
   };
 
-  // Continuous influence value from its level (exponential growth).
+  Economy.factoryDefaultLevels = function () {
+    return { botBay: 0, botSpeed: 0, botPower: 0, botCapacity: 0 };
+  };
+
   Economy.influenceValue = function (level) {
     return Math.pow(1.3, level);
   };
 
-  // Recompute everything that depends on upgrade levels + influence.
+  // Global stats: player, laser, influence, base, energy.
   Economy.derive = function (state) {
     const L = state.levels;
     const I = Economy.influenceValue(L.influence);
@@ -44,56 +48,76 @@
       laserPower: CFG.laser.power0 * (1 + 0.55 * L.laserPower),
       laserRange: CFG.laser.range0 * Math.pow(I, inf.rangeExp) * (1 + 0.35 * L.laserRange),
       carveR: CFG.laser.carveR0 * Math.pow(I, inf.carveExp),
-      yield: CFG.laser.yield0 * (1 + 0.5 * L.laserEff),
-      botSpeed: CFG.bot.speed0 * (1 + 0.4 * L.botSpeed) * sI,
-      botCarveR: CFG.bot.carveR0 * Math.pow(I, inf.carveExp * 0.85),
-      botPower: CFG.bot.power0 * (1 + 0.5 * L.botPower),
-      botCapacity: CFG.bot.capacity0 * (1 + 0.6 * L.botCapacity) * sI,
-      botBay: 1 + L.botBay,
+      yield: CFG.laser.yield0 * (1 + 0.5 * L.laserEff) * (state.yieldMult || 1),
+      baseRange: CFG.base.range0 * sI * (1 + 0.3 * L.baseRange),
+      energyMax: CFG.player.maxEnergy0 * sI,
     };
   };
 
-  Economy.cost = function (state, id) {
-    const c = CFG.cost[id];
-    const lvl = state.levels[id] || 0;
+  // Per-factory bot stats.
+  Economy.deriveBotStats = function (levels, influence) {
+    const I = influence;
+    const sI = Math.sqrt(I);
+    const inf = CFG.influence;
     return {
-      minerals: Math.ceil(c.minerals * Math.pow(c.growth, lvl)),
-      crystals: c.crystals ? Math.ceil(c.crystals * Math.pow(c.crystalGrowth || c.growth, lvl)) : 0,
+      botSpeed: CFG.bot.speed0 * (1 + 0.4 * levels.botSpeed) * sI,
+      botCarveR: CFG.bot.carveR0 * Math.pow(I, inf.carveExp * 0.85),
+      botPower: CFG.bot.power0 * (1 + 0.5 * levels.botPower),
+      botCapacity: CFG.bot.capacity0 * (1 + 0.6 * levels.botCapacity) * sI,
+      botBay: 1 + levels.botBay,
+      sqrtI: sI,
     };
   };
 
-  Economy.canAfford = function (state, id) {
-    const c = Economy.cost(state, id);
-    return state.minerals >= c.minerals && state.crystals >= c.crystals;
+  Economy.cost = function (id, level) {
+    const c = CFG.cost[id];
+    return {
+      minerals: c.minerals ? Math.ceil(c.minerals * Math.pow(c.growth, level)) : 0,
+      crystals: c.crystals ? Math.ceil(c.crystals * Math.pow(c.crystalGrowth || c.growth, level)) : 0,
+      catalyst: c.catalyst ? Math.ceil(c.catalyst * Math.pow(c.catalystGrowth || c.growth, level)) : 0,
+    };
   };
 
-  // Deducts cost and bumps the level. Side effects (spawning a factory) are
-  // handled by the caller. Returns true on success.
-  Economy.purchase = function (state, id) {
-    if (!Economy.canAfford(state, id)) return false;
-    const c = Economy.cost(state, id);
-    state.minerals -= c.minerals;
-    state.crystals -= c.crystals;
-    state.levels[id] = (state.levels[id] || 0) + 1;
-    return true;
+  Economy.canPay = function (state, cost) {
+    return state.minerals >= cost.minerals && state.crystals >= cost.crystals && state.catalyst >= (cost.catalyst || 0);
   };
 
-  // UI metadata. `panel` = which menu the upgrade lives in.
+  Economy.pay = function (state, cost) {
+    state.minerals -= cost.minerals;
+    state.crystals -= cost.crystals;
+    state.catalyst -= cost.catalyst || 0;
+  };
+
+  Economy.FACTORY_UPGRADES = ["botBay", "botSpeed", "botPower", "botCapacity"];
+
   Economy.UPGRADES = {
     base: [
       { id: "laserPower", name: "Laser Power", desc: "Carve rock faster." },
       { id: "laserRange", name: "Laser Range", desc: "Reach deposits from farther away." },
       { id: "laserEff", name: "Refinement", desc: "Extract more minerals per carve." },
-      { id: "influence", name: "Influence", desc: "Grow your scale. Mine larger regions; the core shrinks around you." },
-      { id: "factory", name: "Build Factory", desc: "Deploy a factory that assembles autonomous mining bots." },
+      { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field around your base." },
+      { id: "influence", name: "Influence", desc: "Grow your scale. Mine larger regions; the core shrinks around you. Needs Catalyst." },
+      { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
     ],
     factory: [
-      { id: "botBay", name: "Expand Bay", desc: "House more bots per factory." },
-      { id: "botSpeed", name: "Bot Thrusters", desc: "Bots travel faster." },
-      { id: "botPower", name: "Bot Drills", desc: "Bots carve faster." },
-      { id: "botCapacity", name: "Bot Hoppers", desc: "Bots carry more before returning." },
+      { id: "botBay", name: "Expand Bay", desc: "House more bots at this factory." },
+      { id: "botSpeed", name: "Bot Thrusters", desc: "Bots at this factory travel faster." },
+      { id: "botPower", name: "Bot Drills", desc: "Bots at this factory carve faster." },
+      { id: "botCapacity", name: "Bot Hoppers", desc: "Bots at this factory carry more before returning." },
     ],
   };
+
+  // HUD glossary entries.
+  Economy.GLOSSARY = [
+    { glyph: "◈", cls: "c-min", name: "Minerals", desc: "Primary resource from carving any rock. Funds most upgrades." },
+    { glyph: "✦", cls: "c-cry", name: "Crystals", desc: "Mined from glittering crystal veins. Needed for advanced upgrades." },
+    { glyph: "✷", cls: "c-cat", name: "Catalyst", desc: "Rare shiny material from special veins. Required to grow Influence." },
+    { glyph: "▴", cls: "c-bot", name: "Bots", desc: "Active mining bots / total bay capacity across all factories." },
+    { glyph: "⬡", cls: "c-fac", name: "Factories", desc: "Deployed factories. Each assembles and upgrades its own bots." },
+    { glyph: "◎", cls: "c-inf", name: "Influence", desc: "Your scale. Higher influence zooms the view out and extends your reach." },
+    { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated. Reach ~90% to Ascend." },
+    { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar by your ship. Drains when acting outside base range; recharge inside it." },
+  ];
 
   G.Economy = Economy;
 })(window.G);

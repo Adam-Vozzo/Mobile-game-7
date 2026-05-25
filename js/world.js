@@ -1,8 +1,8 @@
 // The planet core: a destructible density field rendered as glowing contours
-// via marching squares. Carving rock yields minerals (and crystals from veins).
+// via marching squares. Carving rock yields minerals, crystals, and (rarely)
+// catalyst from special veins.
 (function (G) {
   "use strict";
-
   const U = G.util;
 
   function World(seed) {
@@ -11,13 +11,14 @@
     this.seed = seed >>> 0;
     this.radius = w.radius;
     this.cell = w.cell;
-    this.NX = Math.round((2 * w.radius) / w.cell); // cells across
+    this.NX = Math.round((2 * w.radius) / w.cell);
     this.NY = this.NX;
-    this.P = this.NX + 1; // lattice points across
+    this.P = this.NX + 1;
     this.density = new Float32Array(this.P * this.P);
     this.richness = new Float32Array(this.P * this.P);
     this.crystal = new Uint8Array(this.P * this.P);
-    this.solidTotal = 0; // initial total density (for carved fraction)
+    this.special = new Uint8Array(this.P * this.P);
+    this.solidTotal = 0;
     this.removedTotal = 0;
     this.generate();
   }
@@ -44,35 +45,32 @@
         const id = j * P + i;
         const r = Math.hypot(wx, wy);
         if (r > R) {
-          // Outside the core: permanent crust.
           this.density[id] = 1;
           this.richness[id] = 0;
           this.crystal[id] = 0;
+          this.special[id] = 0;
           continue;
         }
-        // Mostly-solid rock with winding natural caverns.
         const n = U.fbm(wx * w.noiseScale, wy * w.noiseScale, this.seed, w.octaves);
         let d = 0.62 + (n - 0.5) * 0.95;
-        // Thicken toward the crust so there's a clear outer wall.
         const edge = r / R;
         if (edge > 0.82) d = U.lerp(d, 1, (edge - 0.82) / 0.18);
         d = U.clamp(d, 0, 1);
         this.density[id] = d;
         solid += d;
-        // Mineral richness (denser veins look brighter and pay more).
         const rn = U.fbm(wx * w.richScale + 99, wy * w.richScale - 33, this.seed + 7, 3);
         this.richness[id] = Math.pow(U.clamp(rn, 0, 1), 1.5);
-        // Crystal-bearing veins.
         const vn = U.fbm(wx * w.veinScale, wy * w.veinScale, this.seed + 21, 2);
         this.crystal[id] = vn > w.crystalVeinCut ? 1 : 0;
+        const sn = U.fbm(wx * w.specialScale + 7, wy * w.specialScale + 51, this.seed + 41, 2);
+        this.special[id] = sn > w.specialVeinCut ? 1 : 0;
       }
     }
     this.solidTotal = solid;
     this.removedTotal = 0;
-    this.clearCircle(0, 0, w.startPocket); // open the spawn cavern (no payout)
+    this.clearCircle(0, 0, w.startPocket);
   };
 
-  // Remove rock without crediting resources (spawn pocket, prestige).
   World.prototype.clearCircle = function (cx, cy, r) {
     const P = this.P,
       cell = this.cell,
@@ -86,7 +84,7 @@
       const wy = this.worldY(j);
       for (let i = gi0; i <= gi1; i++) {
         const wx = this.worldX(i);
-        if (wx * wx + wy * wy > R * R) continue; // never touch crust
+        if (wx * wx + wy * wy > R * R) continue;
         if (U.dist2(wx, wy, cx, cy) <= r2) {
           const id = j * P + i;
           this.removedTotal += this.density[id];
@@ -96,8 +94,7 @@
     }
   };
 
-  // Carve rock at (cx,cy). Returns {minerals, crystals} (base amounts; caller
-  // applies efficiency multipliers). amount = density removed at the center.
+  // Returns {minerals, crystals, catalyst} (base amounts; caller applies yield).
   World.prototype.carve = function (cx, cy, r, amount) {
     const w = this.cfg,
       P = this.P,
@@ -109,7 +106,8 @@
     const gj1 = Math.min(this.NY, Math.ceil((cy + r + R) / cell));
     const r2 = r * r;
     let minerals = 0,
-      crystals = 0;
+      crystals = 0,
+      catalyst = 0;
     for (let j = gj0; j <= gj1; j++) {
       const wy = this.worldY(j);
       for (let i = gi0; i <= gi1; i++) {
@@ -120,7 +118,7 @@
         const id = j * P + i;
         const cur = this.density[id];
         if (cur <= 0) continue;
-        const falloff = 1 - Math.sqrt(dd) / r; // 1 at center -> 0 at edge
+        const falloff = 1 - Math.sqrt(dd) / r;
         const take = Math.min(cur, amount * (0.4 + 0.6 * falloff));
         if (take <= 0) continue;
         this.density[id] = cur - take;
@@ -128,12 +126,12 @@
         const rich = this.richness[id];
         minerals += take * w.massPerCell * (0.35 + rich);
         if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
+        if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
       }
     }
-    return { minerals, crystals };
+    return { minerals, crystals, catalyst };
   };
 
-  // Bilinear density sample at a world point.
   World.prototype.densityAt = function (wx, wy) {
     if (wx * wx + wy * wy > this.radius * this.radius) return 1;
     const cell = this.cell,
@@ -154,31 +152,11 @@
     return U.lerp(U.lerp(a, b, fx), U.lerp(c, e, fx), fy);
   };
 
-  // Find a solid, mineral-rich point near (x,y) for a bot to mine.
-  World.prototype.findRockNear = function (x, y, ring, rng) {
-    const w = this.cfg;
-    let best = null,
-      bestScore = 0;
-    const samples = G.CFG.bot.searchSamples;
-    for (let s = 0; s < samples; s++) {
-      const ang = rng() * U.TAU;
-      const rad = 30 + rng() * ring;
-      const px = x + Math.cos(ang) * rad;
-      const py = y + Math.sin(ang) * rad;
-      if (px * px + py * py > this.radius * this.radius) continue;
-      const d = this.densityAt(px, py);
-      if (d <= w.threshold) continue;
-      // Score prefers dense, rich rock.
-      const gi = U.clamp(Math.round((px + this.radius) / this.cell), 0, this.NX);
-      const gj = U.clamp(Math.round((py + this.radius) / this.cell), 0, this.NY);
-      const rich = this.richness[gj * this.P + gi];
-      const score = d * (0.5 + rich) - rad / (ring * 4);
-      if (score > bestScore) {
-        bestScore = score;
-        best = { x: px, y: py };
-      }
-    }
-    return best;
+  // Cell richness at a world point (nearest cell).
+  World.prototype.richnessAt = function (wx, wy) {
+    const gi = U.clamp(Math.round((wx + this.radius) / this.cell), 0, this.NX);
+    const gj = U.clamp(Math.round((wy + this.radius) / this.cell), 0, this.NY);
+    return this.richness[gj * this.P + gi];
   };
 
   World.prototype.carvedFraction = function () {
@@ -186,33 +164,27 @@
   };
 
   // ---- rendering: marching-squares contours + textured dots ----
-  World.prototype.render = function (ctx, cam, vw, vh) {
+  World.prototype.render = function (ctx, cam, vw, vh, time) {
     const T = this.cfg.threshold,
       cell = this.cell,
       R = this.radius,
       P = this.P,
       d = this.density;
-    // Visible world rect (with margin).
     const tl = cam.screenToWorld(0, 0, vw, vh);
     const br = cam.screenToWorld(vw, vh, vw, vh);
     const minWX = Math.min(tl.x, br.x),
       maxWX = Math.max(tl.x, br.x);
     const minWY = Math.min(tl.y, br.y),
       maxWY = Math.max(tl.y, br.y);
-    let i0 = Math.floor((minWX + R) / cell) - 1;
-    let i1 = Math.ceil((maxWX + R) / cell) + 1;
-    let j0 = Math.floor((minWY + R) / cell) - 1;
-    let j1 = Math.ceil((maxWY + R) / cell) + 1;
-    i0 = U.clamp(i0, 0, this.NX);
-    i1 = U.clamp(i1, 0, this.NX);
-    j0 = U.clamp(j0, 0, this.NY);
-    j1 = U.clamp(j1, 0, this.NY);
+    let i0 = U.clamp(Math.floor((minWX + R) / cell) - 1, 0, this.NX);
+    let i1 = U.clamp(Math.ceil((maxWX + R) / cell) + 1, 0, this.NX);
+    let j0 = U.clamp(Math.floor((minWY + R) / cell) - 1, 0, this.NY);
+    let j1 = U.clamp(Math.ceil((maxWY + R) / cell) + 1, 0, this.NY);
     const across = i1 - i0;
     const step = Math.max(1, Math.ceil(across / this.cfg.maxRenderCells));
 
-    this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, step);
+    this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
 
-    // Contour pass (batched into a single stroke for speed).
     const COL = G.CFG.COL;
     ctx.lineWidth = 1;
     ctx.strokeStyle = COL.line;
@@ -245,7 +217,6 @@
         if (mask === 0 || mask === 15) continue;
         const wx0 = this.worldX(i),
           wx1 = this.worldX(ii);
-        // Edge crossing points (top,right,bottom,left).
         const top = () => [U.lerp(wx0, wx1, (T - va) / (vb - va)), wy0];
         const right = () => [wx1, U.lerp(wy0, wy1, (T - vb) / (vc - vb))];
         const bot = () => [U.lerp(wx1, wx0, (T - vc) / (vd - vc)), wy1];
@@ -260,7 +231,6 @@
             b = crossed[1]();
           seg(a[0], a[1], b[0], b[1]);
         } else if (crossed.length === 4) {
-          // Saddle: resolve with the center average.
           const center = (va + vb + vc + vd) / 4 > T;
           const t = top(),
             r = right(),
@@ -280,39 +250,61 @@
     ctx.shadowBlur = 0;
   };
 
-  // Textured dots: ambient dust + brighter specks over rich/crystal rock.
-  World.prototype._renderDots = function (ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, step) {
-    if (step > 3) return; // too far zoomed out; dots would be noise
+  // World-anchored dots (stable while panning): stars only in cleared caverns,
+  // ore glints only on solid rock. Catalyst specks twinkle.
+  World.prototype._renderDots = function (ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time) {
+    const sc = cam.scale;
+    if (sc < 0.25) return; // zoomed too far out; dots would be clutter
     const COL = G.CFG.COL;
-    const stride = 7; // screen-pixel spacing between dot samples
     const T = this.cfg.threshold;
-    for (let sy = 0; sy < vh; sy += stride) {
-      for (let sx = 0; sx < vw; sx += stride) {
-        const wpt = cam.screenToWorld(sx, sy, vw, vh);
-        const wx = wpt.x,
-          wy = wpt.y;
-        if (wx * wx + wy * wy > this.radius * this.radius) continue;
-        // Stable per-world-cell jitter so dots don't shimmer.
-        const cx = Math.floor(wx / 6),
-          cy = Math.floor(wy / 6);
-        const h = U.hash2(cx, cy, this.seed + 5);
-        if (h > 0.5) continue; // ~half the cells get a dot
+    const sp = 14; // world-unit spacing between dot anchors
+    const R2 = this.radius * this.radius;
+    const seed = this.seed;
+    const ax0 = Math.floor(minWX / sp) - 1,
+      ax1 = Math.ceil(maxWX / sp) + 1;
+    const ay0 = Math.floor(minWY / sp) - 1,
+      ay1 = Math.ceil(maxWY / sp) + 1;
+    for (let ay = ay0; ay <= ay1; ay++) {
+      for (let ax = ax0; ax <= ax1; ax++) {
+        const h = U.hash2(ax, ay, seed + 5);
+        if (h > 0.5) continue;
+        const wx = (ax + U.hash2(ax, ay, seed + 11)) * sp;
+        const wy = (ay + U.hash2(ax, ay, seed + 13)) * sp;
+        if (wx * wx + wy * wy > R2) continue;
         const dens = this.densityAt(wx, wy);
-        if (dens > T) {
+        const s = cam.worldToScreen(wx, wy, vw, vh);
+        const sx = s.x | 0,
+          sy = s.y | 0;
+        if (sx < 0 || sy < 0 || sx >= vw || sy >= vh) continue;
+        if (dens <= T) {
+          // Open cavern: faint drifting dust, with a few brighter stars.
+          if (h < 0.06) {
+            ctx.fillStyle = COL.bright;
+            ctx.globalAlpha = 0.6 + 0.3 * Math.sin(time * 1.3 + ax * 3.1 + ay);
+            ctx.fillRect(sx, sy, 1, 1);
+            ctx.globalAlpha = 1;
+          } else if (h < 0.28) {
+            ctx.fillStyle = COL.dim;
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+        } else {
+          // Solid rock: ore glints showing what's worth mining.
           const gi = U.clamp(Math.round((wx + this.radius) / this.cell), 0, this.NX);
           const gj = U.clamp(Math.round((wy + this.radius) / this.cell), 0, this.NY);
           const id = gj * this.P + gi;
-          if (this.crystal[id] && h < 0.12) {
+          if (this.special[id]) {
+            const tw = 0.45 + 0.55 * Math.sin(time * 4 + ax * 2.3 + ay * 1.7);
+            ctx.fillStyle = COL.catalystDot;
+            ctx.globalAlpha = 0.35 + 0.65 * tw;
+            ctx.fillRect(sx, sy, tw > 0.7 ? 2 : 1, 1);
+            ctx.globalAlpha = 1;
+          } else if (this.crystal[id] && h < 0.32) {
             ctx.fillStyle = COL.crystalDot;
-            ctx.fillRect(sx | 0, sy | 0, 1, 1);
+            ctx.fillRect(sx, sy, 1, 1);
           } else if (this.richness[id] > 0.45 && h < 0.34) {
             ctx.fillStyle = COL.mineralDot;
-            ctx.fillRect(sx | 0, sy | 0, 1, 1);
+            ctx.fillRect(sx, sy, 1, 1);
           }
-        } else if (h < 0.06) {
-          // Faint dust drifting in the open caverns.
-          ctx.fillStyle = COL.dim;
-          ctx.fillRect(sx | 0, sy | 0, 1, 1);
         }
       }
     }

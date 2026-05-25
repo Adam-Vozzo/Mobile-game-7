@@ -1,4 +1,4 @@
-// HUD + modal upgrade menus (DOM overlay for crisp text and tappable buttons).
+// HUD + modal upgrade menus + glossary (DOM overlay for crisp tappable UI).
 (function (G) {
   "use strict";
   const U = G.util;
@@ -16,6 +16,7 @@
     this.el = {
       minerals: document.getElementById("hud-minerals"),
       crystals: document.getElementById("hud-crystals"),
+      catalyst: document.getElementById("hud-catalyst"),
       bots: document.getElementById("hud-bots"),
       factories: document.getElementById("hud-factories"),
       influence: document.getElementById("hud-influence"),
@@ -27,23 +28,29 @@
       close: document.getElementById("modal-close"),
       toast: document.getElementById("toast"),
       prompt: document.getElementById("prompt"),
-      btnBase: document.getElementById("btn-base"),
+      help: document.getElementById("btn-help"),
+      hud: document.getElementById("hud"),
     };
     const self = this;
     this.el.close.addEventListener("click", () => self.close());
     this.el.modal.addEventListener("click", (e) => {
       if (e.target === self.el.modal) self.close();
     });
-    this.el.btnBase.addEventListener("click", () => self.openPanel("base", game.base, game));
+    this.el.help.addEventListener("click", () => self.openGlossary(game));
   };
 
   UI.updateHUD = function (game) {
     const s = game.state;
     this.el.minerals.textContent = U.formatNum(s.minerals);
     this.el.crystals.textContent = U.formatNum(s.crystals);
-    let botCount = 0;
-    for (const f of game.factories) botCount += f.bots.length;
-    this.el.bots.textContent = botCount + "/" + (game.factories.length * Math.floor(game.stats.botBay));
+    this.el.catalyst.textContent = U.formatNum(s.catalyst);
+    let botCount = 0,
+      bays = 0;
+    for (const f of game.factories) {
+      botCount += f.bots.length;
+      bays += Math.floor(f.botStats.botBay);
+    }
+    this.el.bots.textContent = botCount + "/" + bays;
     this.el.factories.textContent = String(game.factories.length);
     this.el.influence.textContent = U.formatNum(game.stats.influence);
     this.el.core.textContent = (game.world.carvedFraction() * 100).toFixed(1) + "%";
@@ -58,6 +65,19 @@
     this.refresh(game);
   };
 
+  UI.openGlossary = function (game) {
+    if (this.open && this.panel === "glossary") {
+      this.close();
+      return;
+    }
+    this.open = true;
+    this.panel = "glossary";
+    this.building = null;
+    this.el.modal.classList.add("show");
+    this.el.title.textContent = "GLOSSARY";
+    this.refresh(game);
+  };
+
   UI.close = function () {
     this.open = false;
     this.panel = null;
@@ -65,49 +85,62 @@
     this.el.modal.classList.remove("show");
   };
 
-  UI.toggleBase = function (game) {
-    if (this.open && this.panel === "base") this.close();
-    else this.openPanel("base", game.base, game);
-  };
-
   UI.refresh = function (game) {
     if (!this.open) return;
     const list = this.el.list;
     list.innerHTML = "";
+
+    if (this.panel === "glossary") {
+      this.el.sub.textContent = "What the readouts at the top mean";
+      for (const e of Eco.GLOSSARY) {
+        const row = document.createElement("div");
+        row.className = "gloss";
+        row.innerHTML =
+          '<div class="gloss-ic ' + e.cls + '">' + e.glyph + "</div>" +
+          '<div class="gloss-main"><div class="gloss-name">' + e.name + "</div>" +
+          '<div class="gloss-desc">' + e.desc + "</div></div>";
+        list.appendChild(row);
+      }
+      return;
+    }
+
     const defs = Eco.UPGRADES[this.panel];
     const s = game.state;
+    const isFactory = this.panel === "factory";
 
     if (this.panel === "base") {
-      this.el.sub.textContent = "Influence " + U.formatNum(game.stats.influence) + "  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
+      this.el.sub.textContent = "Influence ◎" + U.formatNum(game.stats.influence) + "  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
       if (game.world.carvedFraction() >= 0.9) {
         const asc = document.createElement("button");
         asc.className = "upg ascend";
         asc.innerHTML =
           '<div class="upg-main"><div class="upg-name">ASCEND <span class="upg-lvl">x' +
-          (game.state.ascends || 0) +
-          '</span></div><div class="upg-desc">Assimilate this core. Reset progress for a permanent +50% yield and a fresh, richer core.</div></div><div class="upg-cost"><span class="c-cry">✦</span></div>';
+          (s.ascends || 0) +
+          '</span></div><div class="upg-desc">Assimilate this core. Reset progress for a permanent +50% yield and a fresh, richer core.</div></div><div class="upg-cost"><span class="c-cat">✷</span></div>';
         asc.addEventListener("click", () => game.ascend());
         list.appendChild(asc);
       }
     } else {
-      this.el.sub.textContent = "Bots apply to all factories";
+      const bs = this.building.botStats;
+      this.el.sub.textContent = "This factory · " + this.building.bots.length + "/" + Math.floor(bs.botBay) + " bots";
     }
 
     for (const def of defs) {
-      const cost = Eco.cost(s, def.id);
-      const afford = Eco.canAfford(s, def.id);
-      const lvl = s.levels[def.id] || 0;
+      const lvl = isFactory ? this.building.levels[def.id] || 0 : s.levels[def.id] || 0;
+      const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : lvl);
+      const afford = Eco.canPay(s, cost);
 
       const row = document.createElement("button");
       row.className = "upg" + (afford ? "" : " locked");
       row.disabled = !afford;
 
       let levelLabel = "Lv " + lvl;
-      if (def.id === "factory") levelLabel = "Built " + lvl;
-      if (def.id === "influence") levelLabel = "x" + U.formatNum(game.stats.influence);
+      if (def.id === "factory") levelLabel = "Built " + s.levels.factory;
+      if (def.id === "influence") levelLabel = "◎" + U.formatNum(game.stats.influence);
 
       let costHtml = '<span class="c-min">◈ ' + U.formatNum(cost.minerals) + "</span>";
       if (cost.crystals > 0) costHtml += '<span class="c-cry">✦ ' + U.formatNum(cost.crystals) + "</span>";
+      if (cost.catalyst > 0) costHtml += '<span class="c-cat">✷ ' + U.formatNum(cost.catalyst) + "</span>";
 
       row.innerHTML =
         '<div class="upg-main"><div class="upg-name">' +
@@ -123,8 +156,9 @@
         "</div>";
 
       const id = def.id;
+      const building = this.building;
       row.addEventListener("click", () => {
-        if (game.buyUpgrade(id)) {
+        if (game.buyUpgrade(id, building)) {
           this.refresh(game);
           this.updateHUD(game);
         }
