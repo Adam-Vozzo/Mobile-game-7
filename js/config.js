@@ -151,6 +151,7 @@
     showFps: false,
     botTargets: false,
     thickBeam: false,
+    depthHaze: false,
     // gameplay toggles
     veinOnly: false,
     laserHeat: false,
@@ -176,5 +177,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b13";
+  G.BUILD = "2026-05-26 · b14";
 })(window.G);

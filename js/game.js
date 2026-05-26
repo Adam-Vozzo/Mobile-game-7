@@ -575,6 +575,19 @@
     this.drawParticles(ctx, iw, ih);
     ctx.restore();
 
+    // depth haze (dev): world-anchored radial darkening toward the crust
+    if (G.DEV.depthHaze) {
+      const cc = this.cam.worldToScreen(0, 0, iw, ih);
+      const rad = Math.max(8, this.world.radius * this.cam.scale);
+      const grd = ctx.createRadialGradient(cc.x, cc.y, rad * 0.12, cc.x, cc.y, rad);
+      grd.addColorStop(0, "rgba(0,0,0,0)");
+      grd.addColorStop(1, "rgba(0,0,0,0.55)");
+      ctx.save();
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, iw, ih);
+      ctx.restore();
+    }
+
     this.drawOverlay(ctx, iw, ih);
   };
 

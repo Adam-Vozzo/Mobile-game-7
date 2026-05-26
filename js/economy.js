@@ -168,6 +168,7 @@
     { key: "showFps", name: "Show FPS", desc: "Frame-time / FPS readout, top-left of the canvas.", kind: "visual" },
     { key: "botTargets", name: "Bot Targets", desc: "Draw a line from each bot to what it's mining.", kind: "visual" },
     { key: "thickBeam", name: "Thick Beam", desc: "Chunkier, brighter mining laser.", kind: "visual" },
+    { key: "depthHaze", name: "Depth Haze", desc: "Darken toward the crust so the core reads as deep.", kind: "visual" },
     { key: "veinOnly", name: "Vein-Only Mining", desc: "Regular rock yields nothing — only veins pay.", kind: "gameplay" },
     { key: "laserHeat", name: "Laser Heat", desc: "Sustained firing overheats the laser; it cools down before firing again.", kind: "gameplay" },
     { key: "corePulse", name: "Core Pulses", desc: "Periodic core pulses that briefly double all yield.", kind: "gameplay" },
