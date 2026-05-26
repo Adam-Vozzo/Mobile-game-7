@@ -18,8 +18,8 @@
     this._touch = null; // active joystick touch/pointer
     this._pending = null; // candidate tap pointer
     this.canvas = null;
-    this.deadzone = 10;
-    this.maxRadius = 56;
+    this.deadzone = 12;
+    this.maxRadius = 82;
   }
 
   Input.prototype.attach = function (canvas) {

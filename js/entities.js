@@ -59,7 +59,6 @@
     this.nearBase = dB <= stats.baseRange;
     this.inBase = this.nearBase;
     this.rechargeSource = src;
-    const depositing = !!src || DEV.magnet;
 
     const depleted = !DEV.infiniteEnergy && this.energy <= 0;
     const moveMult = depleted ? P.depletedSpeed : 1;
@@ -179,8 +178,20 @@
       this.beam.active = false;
     }
 
-    // --- deposit cargo at base/factory (or anywhere with the magnet) ---
-    if (depositing && (this.cargo.m || this.cargo.c || this.cargo.k)) {
+    // --- deposit cargo gradually at base/factory (motes flow ship -> source) ---
+    const load = this.cargo.m + this.cargo.c + this.cargo.k;
+    if (src && load > 0) {
+      const take = Math.min(load, (this.maxCargo + 24) * dt); // empties a full hold in ~1s
+      const f = take / load;
+      const dm = this.cargo.m * f,
+        dc = this.cargo.c * f,
+        dk = this.cargo.k * f;
+      this.cargo.m -= dm;
+      this.cargo.c -= dc;
+      this.cargo.k -= dk;
+      game.addResources(dm, dc, dk, false);
+      game.spawnDepositMote(this.x, this.y, src.x, src.y);
+    } else if (DEV.magnet && load > 0) {
       game.addResources(this.cargo.m, this.cargo.c, this.cargo.k, false);
       this.cargo.m = this.cargo.c = this.cargo.k = 0;
     }

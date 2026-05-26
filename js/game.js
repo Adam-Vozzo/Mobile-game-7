@@ -217,25 +217,52 @@
       this.particles.push({ x, y, vx: Math.cos(a) * 30, vy: Math.sin(a) * 30, life: 0.6, max: 0.6, c: COL.crystal });
     }
   };
-  // Ore mote that gets sucked into the ship.
+  // Ore mote spawned at (x,y) that arcs into the ship.
   Game.prototype.spawnCollect = function (x, y) {
-    if (this.particles.length > 280) return;
-    if (Math.random() > 0.5) return;
-    this.particles.push({ x: x + (Math.random() - 0.5) * 8, y: y + (Math.random() - 0.5) * 8, vx: 0, vy: 0, life: 1, max: 1, c: COL.mineralDot, collect: true });
+    if (this.particles.length > 300) return;
+    if (Math.random() > 0.7) return;
+    this._mote(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, true, 0, 0, COL.mineralDot);
+  };
+  // Ore mote that arcs from the ship into a base/factory while depositing.
+  Game.prototype.spawnDepositMote = function (sx, sy, tx, ty) {
+    if (this.particles.length > 300) return;
+    if (Math.random() > 0.55) return;
+    this._mote(sx + (Math.random() - 0.5) * 6, sy + (Math.random() - 0.5) * 6, false, tx, ty, COL.charge);
+  };
+  Game.prototype._mote = function (x0, y0, toShip, tx, ty, c) {
+    this.particles.push({
+      mote: true,
+      x: x0,
+      y: y0,
+      x0: x0,
+      y0: y0,
+      tx: tx,
+      ty: ty,
+      toShip: toShip,
+      t: 0,
+      dur: 0.6 + Math.random() * 0.45, // slower, clearly visible
+      arc: (Math.random() * 2 - 1) * 0.22, // random narrow arc
+      c: c,
+    });
   };
   Game.prototype.updateParticles = function (dt) {
     const p = this.particles;
     for (let i = p.length - 1; i >= 0; i--) {
       const q = p[i];
-      if (q.collect) {
-        const dx = this.player.x - q.x,
-          dy = this.player.y - q.y;
-        const d = Math.hypot(dx, dy) || 1;
-        const sp = 130 + (1 - q.life) * 300; // accelerate into the ship
-        q.x += (dx / d) * sp * dt;
-        q.y += (dy / d) * sp * dt;
-        q.life -= dt * 2.4;
-        if (d < 7 || q.life <= 0) p.splice(i, 1);
+      if (q.mote) {
+        q.t += dt / q.dur;
+        const tx = q.toShip ? this.player.x : q.tx;
+        const ty = q.toShip ? this.player.y : q.ty;
+        const u = q.t < 1 ? q.t : 1;
+        const dx = tx - q.x0,
+          dy = ty - q.y0;
+        const dist = Math.hypot(dx, dy) || 1;
+        const cx = (q.x0 + tx) / 2 + (-dy / dist) * q.arc * dist;
+        const cy = (q.y0 + ty) / 2 + (dx / dist) * q.arc * dist;
+        const o = 1 - u;
+        q.x = o * o * q.x0 + 2 * o * u * cx + u * u * tx;
+        q.y = o * o * q.y0 + 2 * o * u * cy + u * u * ty;
+        if (q.t >= 1) p.splice(i, 1);
         continue;
       }
       q.x += q.vx * dt;
@@ -678,13 +705,27 @@
 
   Game.prototype.drawParticles = function (ctx, iw, ih) {
     const cam = this.cam;
+    ctx.save();
     for (const q of this.particles) {
       const sp = cam.worldToScreen(q.x, q.y, iw, ih);
-      ctx.globalAlpha = U.clamp(q.life / q.max, 0, 1);
-      ctx.fillStyle = q.c;
-      ctx.fillRect(sp.x | 0, sp.y | 0, 1, 1);
+      if (q.mote) {
+        // brighter near the ends of the arc; chunky + glowing so it reads
+        const u = q.t < 1 ? q.t : 1;
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(u * Math.PI);
+        ctx.fillStyle = q.c;
+        ctx.shadowColor = q.c;
+        ctx.shadowBlur = gb(3);
+        ctx.fillRect((sp.x | 0) - 1, (sp.y | 0) - 1, 2, 2);
+      } else {
+        ctx.globalAlpha = U.clamp(q.life / q.max, 0, 1);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = q.c;
+        ctx.fillRect(sp.x | 0, sp.y | 0, 1, 1);
+      }
     }
     ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.restore();
   };
 
   Game.prototype.drawOverlay = function (d) {
@@ -735,14 +776,14 @@
       const kx = this.input.joyKnob.x * scl,
         ky = this.input.joyKnob.y * scl;
       d.save();
-      d.strokeStyle = "rgba(255,154,54,0.35)";
-      d.lineWidth = 2 * scl;
+      d.strokeStyle = "rgba(255,154,54,0.32)";
+      d.lineWidth = 3 * scl;
       d.beginPath();
       d.arc(bx, by, this.input.maxRadius * scl, 0, TAU);
       d.stroke();
       d.fillStyle = "rgba(255,154,54,0.5)";
       d.beginPath();
-      d.arc(kx, ky, 14 * scl, 0, TAU);
+      d.arc(kx, ky, 22 * scl, 0, TAU);
       d.fill();
       d.restore();
     }
