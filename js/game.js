@@ -13,6 +13,7 @@
     this.stats = Eco.derive(this.state);
     this.factories = [];
     this.particles = [];
+    this.pickups = [];
     this.cable = new G.Rope(16);
     this.botIncomeEMA = 0;
     this._botAccum = 0;
@@ -201,6 +202,7 @@
     this.player = new G.Player(0, 0);
     this.factories = [];
     this.particles = [];
+    this.pickups = [];
     this.cable.active = false;
     this.won = false;
     this.recomputeStats();
@@ -219,6 +221,7 @@
     this.player = new G.Player(0, 0);
     this.factories = [];
     this.particles = [];
+    this.pickups = [];
     this.cable.active = false;
     this.botIncomeEMA = 0;
     this._botAccum = 0;
@@ -281,8 +284,13 @@
     if (Math.random() > 0.55) return;
     this._mote(sx + (Math.random() - 0.5) * 6, sy + (Math.random() - 0.5) * 6, null, tx, ty, COL.charge);
   };
+  // Bundled ore mote: arcs to the ship and is credited to cargo on arrival.
+  Game.prototype.spawnCargoMote = function (x, y, m, c, k) {
+    const col = k > 0 ? COL.catalyst : c > 0 ? COL.crystal : COL.mineralDot;
+    this._mote(x + (Math.random() - 0.5) * 5, y + (Math.random() - 0.5) * 5, this.player, 0, 0, col, { m: m, c: c, k: k });
+  };
   // target: a live entity (homes to target.x/target.y) or null for fixed (tx,ty).
-  Game.prototype._mote = function (x0, y0, target, tx, ty, c) {
+  Game.prototype._mote = function (x0, y0, target, tx, ty, c, bundle) {
     this.particles.push({
       mote: true,
       x: x0,
@@ -296,6 +304,7 @@
       dur: 0.55 + Math.random() * 0.4,
       arc: (Math.random() * 2 - 1) * 0.22, // random narrow arc
       c: c,
+      bundle: bundle || null,
     });
   };
   Game.prototype.updateParticles = function (dt) {
@@ -315,7 +324,19 @@
         const o = 1 - u;
         q.x = o * o * q.x0 + 2 * o * u * cx + u * u * tx;
         q.y = o * o * q.y0 + 2 * o * u * cy + u * u * ty;
-        if (q.t >= 1) p.splice(i, 1);
+        if (q.t >= 1) {
+          if (q.bundle) {
+            const pl = this.player,
+              bnd = q.bundle;
+            pl.cargo.m += bnd.m;
+            pl.cargo.c += bnd.c;
+            pl.cargo.k += bnd.k;
+            pl.incoming.m = Math.max(0, pl.incoming.m - bnd.m);
+            pl.incoming.c = Math.max(0, pl.incoming.c - bnd.c);
+            pl.incoming.k = Math.max(0, pl.incoming.k - bnd.k);
+          }
+          p.splice(i, 1);
+        }
         continue;
       }
       q.x += q.vx * dt;
@@ -324,6 +345,59 @@
       q.vy *= 0.92;
       q.life -= dt;
       if (q.life <= 0) p.splice(i, 1);
+    }
+  };
+
+  // ---- loose ore pickups (overflow when cargo is full) ----
+  Game.prototype.addPickup = function (x, y, m, c, k) {
+    const mr = CFG.pickup.mergeRange;
+    for (const pk of this.pickups) {
+      if (U.dist(pk.x, pk.y, x, y) < mr) {
+        pk.m += m;
+        pk.c += c;
+        pk.k += k;
+        return;
+      }
+    }
+    if (this.pickups.length >= CFG.pickup.maxCount) {
+      let sm = this.pickups[0];
+      for (const pk of this.pickups) if (pk.m + pk.c + pk.k < sm.m + sm.c + sm.k) sm = pk;
+      sm.m += m;
+      sm.c += c;
+      sm.k += k;
+      return;
+    }
+    this.pickups.push({ x: x, y: y, m: m, c: c, k: k, cd: 0, ph: Math.random() * TAU });
+  };
+
+  Game.prototype.updatePickups = function (dt) {
+    const pl = this.player;
+    const range = CFG.pickup.pullRange * this.stats.sqrtI;
+    const r2 = range * range;
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pk = this.pickups[i];
+      const tot = pk.m + pk.c + pk.k;
+      if (tot <= 0.0001) {
+        this.pickups.splice(i, 1);
+        continue;
+      }
+      pk.cd -= dt;
+      const room = pl.cargoRoom();
+      if (room > 0.01 && pk.cd <= 0 && U.dist2(pk.x, pk.y, pl.x, pl.y) <= r2) {
+        const chunk = Math.min(tot, room, this.stats.cargoCapacity * CFG.pickup.chunk);
+        const f = chunk / tot;
+        const m = pk.m * f,
+          c = pk.c * f,
+          k = pk.k * f;
+        pk.m -= m;
+        pk.c -= c;
+        pk.k -= k;
+        pl.incoming.m += m;
+        pl.incoming.c += c;
+        pl.incoming.k += k;
+        this.spawnCargoMote(pk.x, pk.y, m, c, k);
+        pk.cd = 0.12;
+      }
     }
   };
 
@@ -387,6 +461,7 @@
     for (const f of this.factories) f.update(dt, this);
     if (!frozen) this.player.update(dt, this.input, this.stats, this.world, this);
     this.updateParticles(dt);
+    this.updatePickups(dt);
 
     // recharge cable -> attaches to whichever source is recharging us
     const src = this.player.rechargeSource;
@@ -461,6 +536,7 @@
 
     if (G.DEV.grid) this.drawGrid(ctx, iw, ih);
     this.world.render(ctx, this.cam, iw, ih, this.time);
+    this.drawPickups(ctx, iw, ih);
     this.drawEntities(ctx, iw, ih);
     this.drawParticles(ctx, iw, ih);
     this.drawOverlay(ctx, iw, ih);
@@ -470,12 +546,50 @@
     const gr = CFG.render.grid;
     ctx.save();
     ctx.globalAlpha = gr.alpha;
-    ctx.fillStyle = COL.grid;
-    for (let y = 1; y < ih; y += gr.spacing) {
-      for (let x = 1; x < iw; x += gr.spacing) ctx.fillRect(x, y, 1, 1);
+    ctx.strokeStyle = COL.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = Math.round(gr.spacing / 2); x < iw; x += gr.spacing) {
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, ih);
     }
+    for (let y = Math.round(gr.spacing / 2); y < ih; y += gr.spacing) {
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(iw, y + 0.5);
+    }
+    ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.restore();
+  };
+
+  Game.prototype.drawPickups = function (ctx, iw, ih) {
+    const cam = this.cam;
+    for (const pk of this.pickups) {
+      const sp = cam.worldToScreen(pk.x, pk.y, iw, ih);
+      if (sp.x < -8 || sp.y < -8 || sp.x > iw + 8 || sp.y > ih + 8) continue;
+      const tot = pk.m + pk.c + pk.k;
+      const col = pk.k > 0.01 ? COL.catalyst : pk.c > 0.01 ? COL.crystal : COL.mineralDot;
+      const bob = Math.sin(this.time * 3 + pk.ph) * 1.3;
+      const sz = U.clamp(1 + Math.sqrt(tot) * 0.5, 1.5, 4);
+      const x = sp.x,
+        y = sp.y + bob;
+      ctx.save();
+      ctx.globalAlpha = 0.65 + 0.35 * Math.sin(this.time * 4 + pk.ph);
+      ctx.fillStyle = col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = gb(3);
+      // small diamond so it reads as loose ore
+      ctx.translate(x, y);
+      ctx.beginPath();
+      ctx.moveTo(0, -sz);
+      ctx.lineTo(sz, 0);
+      ctx.lineTo(0, sz);
+      ctx.lineTo(-sz, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   };
 
   Game.prototype.drawEntities = function (ctx, iw, ih) {
@@ -497,9 +611,12 @@
       ctx.restore();
     }
 
+    const assembleT = G.DEV.instantBots ? 0.15 : CFG.bot.assembleTime;
     for (const f of this.factories) {
       const sp = cam.worldToScreen(f.x, f.y, iw, ih);
-      this.drawFactory(ctx, sp.x, sp.y, Math.max(f.r * cam.scale, 6), f.spin);
+      const producing = f.bots.length < Math.floor(f.botStats.botBay);
+      const prog = producing ? U.clamp(f.assemble / assembleT, 0, 1) : 0;
+      this.drawFactory(ctx, sp.x, sp.y, Math.max(f.r * cam.scale, 6), f.spin, prog);
       for (const b of f.bots) this.drawBot(ctx, b, iw, ih);
     }
 
@@ -757,7 +874,7 @@
     ctx.restore();
   };
 
-  Game.prototype.drawFactory = function (ctx, x, y, r, spin) {
+  Game.prototype.drawFactory = function (ctx, x, y, r, spin, prog) {
     ctx.save();
     ctx.strokeStyle = COL.line;
     ctx.fillStyle = COL.bright;
@@ -780,6 +897,16 @@
     }
     ctx.rotate(-spin);
     ctx.fillRect(-1.5, -1.5, 3, 3);
+    // bot production progress: an arc just inside the border, filling clockwise
+    if (prog > 0) {
+      ctx.strokeStyle = COL.bright;
+      ctx.lineWidth = Math.max(1, r * 0.16);
+      ctx.shadowColor = COL.bright;
+      ctx.shadowBlur = gb(2);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.76, -Math.PI / 2, -Math.PI / 2 + prog * TAU);
+      ctx.stroke();
+    }
     ctx.restore();
   };
 

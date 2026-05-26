@@ -6,12 +6,12 @@
     // ----- palette (Flipper Zero amber/orange) -----
     // Default: open/flyable space is lighter, solid rock is darker.
     COL: {
-      bg: "#150f08",
-      bgCenter: "#241a11",
-      rock: "#070402",
-      bgAlt: "#0b0804", // inverted scheme (dev toggle): dark space
-      bgCenterAlt: "#170f08",
-      rockAlt: "#2a1d0e", // inverted scheme: light rock
+      bg: "#0e0a05",
+      bgCenter: "#191107",
+      rock: "#2a1809", // terrain interior: dark brown/orange (not black)
+      bgAlt: "#241608", // inverted scheme (dev toggle): light space
+      bgCenterAlt: "#311e0c",
+      rockAlt: "#090603", // inverted scheme: dark rock
       vignette: "rgba(2,1,0,0.6)",
       dim: "#7a4a1e",
       line: "#d2701f",
@@ -38,7 +38,7 @@
     render: {
       targetInternalW: 240,
       glow: true,
-      grid: { spacing: 13, alpha: 0.11 }, // subtle screen-space dot grid
+      grid: { spacing: 16, alpha: 0.06 }, // subtle screen-space line grid
       sweep: { period: 9, alpha: 0.07, band: 0.42 }, // slow top->bottom light sweep
       vignette: 0.5,
     },
@@ -74,7 +74,7 @@
       maxEnergy0: 150, // scales with sqrt(influence)
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
-      energyRecharge: 55, // /s inside base range
+      energyRecharge: 40, // /s inside base range
       depletedSpeed: 0.16, // movement multiplier at 0 energy
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 60, // carrying capacity at influence 1 (scales with sqrtI)
@@ -127,6 +127,9 @@
       botPower: { minerals: 45, growth: 1.55 },
       botCapacity: { minerals: 50, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
     },
+
+    // ----- loose ore pickups (spawned when cargo is full) -----
+    pickup: { pullRange: 95, mergeRange: 16, maxCount: 90, chunk: 0.22 },
 
     // ----- misc -----
     save: { key: "coreforge.save.v2", interval: 8 },

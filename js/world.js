@@ -124,7 +124,8 @@
         this.density[id] = cur - take;
         this.removedTotal += take;
         const rich = this.richness[id];
-        minerals += take * w.massPerCell * (0.35 + rich);
+        // regular rock pays almost nothing; rich veins pay the most
+        minerals += take * w.massPerCell * (0.05 + rich * rich * 2.6);
         if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
         if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
       }

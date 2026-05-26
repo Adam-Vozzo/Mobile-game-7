@@ -20,10 +20,19 @@
     this.inBase = true;
     this.nearBase = true;
     this.rechargeSource = null;
-    this.cargo = { m: 0, c: 0, k: 0 };
+    this.cargo = { m: 0, c: 0, k: 0 }; // credited (arrived) ore
+    this.incoming = { m: 0, c: 0, k: 0 }; // ore in motes en route to the ship
+    this._pend = { m: 0, c: 0, k: 0 }; // mined this tick, awaiting a mote
+    this._pendT = 0;
+    this._lastMine = { x: 0, y: 0 };
     this.cargoLoad = 0;
     this.maxCargo = 1;
   }
+
+  // Free capacity, counting ore already credited + in flight + pending.
+  Player.prototype.cargoRoom = function () {
+    return this.maxCargo - (this.cargo.m + this.cargo.c + this.cargo.k + this.incoming.m + this.incoming.c + this.incoming.k + this._pend.m + this._pend.c + this._pend.k);
+  };
 
   Player.prototype.update = function (dt, input, stats, world, game) {
     const P = CFG.player;
@@ -154,23 +163,21 @@
         this.beam.x2 = hx;
         this.beam.y2 = hy;
         const got = world.carve(hx, hy, stats.carveR, stats.laserPower * dt);
-        let gm = got.minerals * stats.yield,
+        const gm = got.minerals * stats.yield,
           gc = got.crystals * stats.yield,
           gk = got.catalyst * stats.yield;
-        if (!DEV.noCargoLimit) {
-          const room = Math.max(0, this.maxCargo - (this.cargo.m + this.cargo.c + this.cargo.k));
-          const tot = gm + gc + gk;
-          if (tot > room) {
-            const s = room / tot;
-            gm *= s;
-            gc *= s;
-            gk *= s;
-          }
+        const tot = gm + gc + gk;
+        if (tot > 0) {
+          this._lastMine.x = hx;
+          this._lastMine.y = hy;
+          const f = DEV.noCargoLimit ? 1 : tot > Math.max(0, this.cargoRoom()) ? Math.max(0, this.cargoRoom()) / tot : 1;
+          this._pend.m += gm * f;
+          this._pend.c += gc * f;
+          this._pend.k += gk * f;
+          const of = 1 - f;
+          // overflow becomes loose ore that floats until you have room
+          if (of > 0.0001) game.addPickup(hx, hy, gm * of, gc * of, gk * of);
         }
-        this.cargo.m += gm;
-        this.cargo.c += gc;
-        this.cargo.k += gk;
-        if (gm + gc + gk > 0) game.spawnCollect(hx, hy);
         game.spawnSpark(hx, hy);
       } else {
         this.beam.x2 = sx + nx * range;
@@ -178,6 +185,17 @@
       }
     } else {
       this.beam.active = false;
+    }
+
+    // flush mined ore toward the ship as a bundled mote (credited on arrival)
+    this._pendT += dt;
+    if (this._pendT >= 0.08 && this._pend.m + this._pend.c + this._pend.k > 0) {
+      this._pendT = 0;
+      this.incoming.m += this._pend.m;
+      this.incoming.c += this._pend.c;
+      this.incoming.k += this._pend.k;
+      game.spawnCargoMote(this._lastMine.x, this._lastMine.y, this._pend.m, this._pend.c, this._pend.k);
+      this._pend = { m: 0, c: 0, k: 0 };
     }
 
     // --- deposit cargo gradually at base/factory (motes flow ship -> source) ---
