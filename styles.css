@@ -38,8 +38,8 @@ body {
   height: 100%;
   display: block;
   touch-action: none;
+  image-rendering: -moz-crisp-edges;
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
 }
 
 /* ---------- HUD ---------- */

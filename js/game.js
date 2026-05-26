@@ -25,9 +25,7 @@
 
   Game.prototype.init = function (canvas) {
     this.canvas = canvas;
-    this.dctx = canvas.getContext("2d");
-    this.icv = document.createElement("canvas");
-    this.ictx = this.icv.getContext("2d");
+    this.ctx = canvas.getContext("2d");
     this.cam = new G.Camera();
     this.input = new G.Input();
     this.input.attach(canvas);
@@ -440,23 +438,18 @@
   Game.prototype.resize = function () {
     const cssW = this.canvas.clientWidth || window.innerWidth;
     const cssH = this.canvas.clientHeight || window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.cssW = cssW;
     this.cssH = cssH;
-    const backingW = Math.round(cssW * dpr);
-    const backingH = Math.round(cssH * dpr);
-    this.canvas.width = backingW;
-    this.canvas.height = backingH;
-    this.iw = Math.min(CFG.render.targetInternalW, backingW);
-    this.ih = Math.max(1, Math.round(this.iw * (backingH / backingW)));
-    this.icv.width = this.iw;
-    this.icv.height = this.ih;
-    this.backingW = backingW;
-    this.backingH = backingH;
+    // Render at a low internal resolution; CSS upscales the canvas (pixelated).
+    // No large backing store / drawImage upscale -> avoids a Firefox GPU bug.
+    this.iw = Math.max(1, Math.min(CFG.render.targetInternalW, Math.round(cssW)));
+    this.ih = Math.max(1, Math.round(this.iw * (cssH / cssW)));
+    this.canvas.width = this.iw;
+    this.canvas.height = this.ih;
   };
 
   Game.prototype.render = function () {
-    const ctx = this.ictx,
+    const ctx = this.ctx,
       iw = this.iw,
       ih = this.ih;
     const inv = G.DEV.invertTerrain;
@@ -470,12 +463,7 @@
     this.world.render(ctx, this.cam, iw, ih, this.time);
     this.drawEntities(ctx, iw, ih);
     this.drawParticles(ctx, iw, ih);
-
-    const d = this.dctx;
-    d.imageSmoothingEnabled = false;
-    d.clearRect(0, 0, this.backingW, this.backingH);
-    d.drawImage(this.icv, 0, 0, iw, ih, 0, 0, this.backingW, this.backingH);
-    this.drawOverlay(d);
+    this.drawOverlay(ctx, iw, ih);
   };
 
   Game.prototype.drawGrid = function (ctx, iw, ih) {
@@ -820,9 +808,7 @@
     ctx.restore();
   };
 
-  Game.prototype.drawOverlay = function (d) {
-    const W = this.backingW,
-      H = this.backingH;
+  Game.prototype.drawOverlay = function (d, W, H) {
     // slow top->bottom light sweep
     if (G.DEV.sweep) {
       const sw = CFG.render.sweep;
@@ -844,8 +830,7 @@
     if (G.DEV.scanlines) {
       d.save();
       d.fillStyle = "rgba(0,0,0,0.22)";
-      const gap = Math.max(2, Math.round(H / 220));
-      for (let y = 0; y < H; y += gap * 2) d.fillRect(0, y, W, gap);
+      for (let y = 0; y < H; y += 2) d.fillRect(0, y, W, 1);
       d.restore();
     }
 
@@ -860,16 +845,16 @@
       d.restore();
     }
 
-    // virtual joystick
-    const scl = this.backingW / this.cssW;
+    // virtual joystick (input is in CSS px -> map to internal resolution)
     if (this.input.joyActive) {
+      const scl = this.iw / this.cssW;
       const bx = this.input.joyBase.x * scl,
         by = this.input.joyBase.y * scl;
       const kx = this.input.joyKnob.x * scl,
         ky = this.input.joyKnob.y * scl;
       d.save();
-      d.strokeStyle = "rgba(255,154,54,0.32)";
-      d.lineWidth = 3 * scl;
+      d.strokeStyle = "rgba(255,154,54,0.4)";
+      d.lineWidth = Math.max(1, 2 * scl);
       d.beginPath();
       d.arc(bx, by, this.input.maxRadius * scl, 0, TAU);
       d.stroke();
