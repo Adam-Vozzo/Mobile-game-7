@@ -6,6 +6,9 @@
     const game = new G.Game();
     G.game = game;
     game.init(canvas);
+    const ver = document.getElementById("ver");
+    if (ver) ver.textContent = "CORE " + (G.BUILD || "");
+    if (window.console) console.log("CORE build " + (G.BUILD || "?"));
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

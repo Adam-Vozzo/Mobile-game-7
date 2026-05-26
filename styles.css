@@ -158,6 +158,17 @@ body {
   background: rgba(70, 40, 14, 0.9);
 }
 
+#ver {
+  position: fixed;
+  left: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 #prompt {
   position: fixed;
   left: 0;
