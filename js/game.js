@@ -928,7 +928,7 @@
 
     // augment compasses: arc + needle pointing to base / nearest catalyst
     const owns = this.state.augments || {};
-    const rc = r * 2.7;
+    const rc = r * 3.5; // pushed out so the arc clears the energy/cargo bars
     if (owns.compass) {
       const bs = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
       this._compass(ctx, sp.x, sp.y, rc, Math.atan2(bs.y - sp.y, bs.x - sp.x), COL.bright);
