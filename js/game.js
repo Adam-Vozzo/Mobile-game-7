@@ -534,28 +534,51 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, iw, ih);
 
-    if (G.DEV.grid) this.drawGrid(ctx, iw, ih);
     this.world.render(ctx, this.cam, iw, ih, this.time);
     this.drawPickups(ctx, iw, ih);
+    if (G.DEV.grid) this.drawGrid(ctx, iw, ih); // over terrain, under the ship
     this.drawEntities(ctx, iw, ih);
     this.drawParticles(ctx, iw, ih);
     this.drawOverlay(ctx, iw, ih);
   };
 
+  // Fixed grid anchored in world space (the ship flies over it). Spacing
+  // adapts in powers of two so on-screen density stays sensible at any zoom.
   Game.prototype.drawGrid = function (ctx, iw, ih) {
     const gr = CFG.render.grid;
+    const cam = this.cam;
+    let ws = gr.world;
+    let ss = ws * cam.scale;
+    while (ss < 14) {
+      ws *= 2;
+      ss = ws * cam.scale;
+    }
+    while (ss > 64) {
+      ws /= 2;
+      ss = ws * cam.scale;
+    }
+    const tl = cam.screenToWorld(0, 0, iw, ih);
+    const br = cam.screenToWorld(iw, ih, iw, ih);
+    const minWX = Math.min(tl.x, br.x),
+      maxWX = Math.max(tl.x, br.x);
+    const minWY = Math.min(tl.y, br.y),
+      maxWY = Math.max(tl.y, br.y);
+    const hw = iw / 2,
+      hh = ih / 2;
     ctx.save();
     ctx.globalAlpha = gr.alpha;
     ctx.strokeStyle = COL.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let x = Math.round(gr.spacing / 2); x < iw; x += gr.spacing) {
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, ih);
+    for (let wx = Math.ceil(minWX / ws) * ws; wx <= maxWX; wx += ws) {
+      const sx = Math.round(hw + (wx - cam.x) * cam.scale) + 0.5;
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, ih);
     }
-    for (let y = Math.round(gr.spacing / 2); y < ih; y += gr.spacing) {
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(iw, y + 0.5);
+    for (let wy = Math.ceil(minWY / ws) * ws; wy <= maxWY; wy += ws) {
+      const sy = Math.round(hh + (wy - cam.y) * cam.scale) + 0.5;
+      ctx.moveTo(0, sy);
+      ctx.lineTo(iw, sy);
     }
     ctx.stroke();
     ctx.globalAlpha = 1;

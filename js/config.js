@@ -38,7 +38,7 @@
     render: {
       targetInternalW: 240,
       glow: true,
-      grid: { spacing: 16, alpha: 0.06 }, // subtle screen-space line grid
+      grid: { world: 28, alpha: 0.055 }, // world-anchored line grid (base spacing in world units)
       sweep: { period: 9, alpha: 0.07, band: 0.42 }, // slow top->bottom light sweep
       vignette: 0.5,
     },
@@ -161,5 +161,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b10";
+  G.BUILD = "2026-05-26 · b11";
 })(window.G);

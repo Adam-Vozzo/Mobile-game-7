@@ -155,7 +155,7 @@
   // Developer experiment toggles (Settings menu). kind: style | play.
   Economy.DEV_DEFS = [
     { key: "sweep", name: "Light Sweep", desc: "Slow top-to-bottom light band.", kind: "visual" },
-    { key: "grid", name: "Dot Grid", desc: "Subtle background dot grid.", kind: "visual" },
+    { key: "grid", name: "Grid", desc: "Fixed world grid the ship flies over.", kind: "visual" },
     { key: "bloom", name: "Extra Bloom", desc: "Stronger glow on everything.", kind: "visual" },
     { key: "scanlines", name: "CRT Scanlines", desc: "Horizontal scanline overlay.", kind: "visual" },
     { key: "vignette", name: "Vignette", desc: "Darken the screen edges.", kind: "visual" },
