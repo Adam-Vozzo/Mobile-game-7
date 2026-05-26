@@ -33,6 +33,8 @@
         removed: g.world.removedTotal,
         botIncome: g.botIncomeEMA || 0,
         energy: g.player.energy,
+        cargo: g.player.cargo,
+        dev: G.DEV,
         player: { x: g.player.x, y: g.player.y, angle: g.player.angle },
         factories: g.factories.map((f) => ({ x: f.x, y: f.y, seed: f.seed, bots: f.bots.length, levels: f.levels })),
         density: b64encode(u8),

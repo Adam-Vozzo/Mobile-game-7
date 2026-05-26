@@ -194,7 +194,7 @@
     ctx.strokeStyle = COL.line;
     if (G.CFG.render.glow) {
       ctx.shadowColor = COL.bright;
-      ctx.shadowBlur = 3; // bleeds onto the rock fill -> inner-glow edge
+      ctx.shadowBlur = G.DEV.bloom ? 9 : 5; // bleeds onto the rock fill -> inner-glow edge
     }
     ctx.beginPath();
     const seg = (ax, ay, bx, by) => {
@@ -267,7 +267,7 @@
       hh = vh * 0.5;
     ctx.save();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = G.CFG.COL.rock;
+    ctx.fillStyle = G.DEV.invertTerrain ? G.CFG.COL.rockAlt : G.CFG.COL.rock;
     ctx.beginPath();
     for (let j = j0; j < j1; j += step) {
       const jj = Math.min(j + step, this.NY);
@@ -377,10 +377,16 @@
             ctx.fillStyle = COL.crystalDot;
             ctx.fillRect(sx, sy, 1, 1);
           } else if (this.richness[id] > 0.5 && h < 0.42) {
-            // ore: larger + clustered so it doesn't read like a star
+            // ore: a small diamond (not a square) so it reads as a gem, not a star
             ctx.fillStyle = COL.mineralDot;
-            ctx.fillRect(sx, sy, 2, 2);
-            if (h < 0.16) ctx.fillRect(sx + 2, sy + (h < 0.08 ? 1 : 0), 1, 1);
+            ctx.fillRect(sx, sy - 1, 1, 1);
+            ctx.fillRect(sx - 1, sy, 3, 1);
+            ctx.fillRect(sx, sy + 1, 1, 1);
+            if (h < 0.14) {
+              // occasional bigger cluster nearby
+              ctx.fillRect(sx + 2, sy + 1, 1, 1);
+              ctx.fillRect(sx + 3, sy + 1, 1, 1);
+            }
           }
         }
       }

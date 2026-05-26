@@ -17,6 +17,7 @@
         laserPower: 0,
         laserRange: 0,
         laserEff: 0,
+        cargo: 0,
         baseRange: 0,
         influence: 0,
         factory: 0, // number of factories built (drives factory build cost)
@@ -49,6 +50,7 @@
       laserRange: CFG.laser.range0 * Math.pow(I, inf.rangeExp) * (1 + 0.35 * L.laserRange),
       carveR: CFG.laser.carveR0 * Math.pow(I, inf.carveExp),
       yield: CFG.laser.yield0 * (1 + 0.5 * L.laserEff) * (state.yieldMult || 1),
+      cargoCapacity: CFG.player.cargo0 * sI * (1 + 0.6 * L.cargo),
       baseRange: CFG.base.range0 * sI * (1 + 0.3 * L.baseRange),
       energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.35 * L.baseRange),
     };
@@ -95,6 +97,7 @@
       { id: "laserPower", name: "Laser Power", desc: "Carve rock faster." },
       { id: "laserRange", name: "Laser Range", desc: "Reach deposits from farther away." },
       { id: "laserEff", name: "Refinement", desc: "Extract more minerals per carve." },
+      { id: "cargo", name: "Cargo Hold", desc: "Carry more ore before you must return to deposit it." },
       { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field and raise your energy capacity." },
       { id: "influence", name: "Influence", desc: "Grow your scale. Mine larger regions; the core shrinks around you. Needs Catalyst." },
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
@@ -116,7 +119,23 @@
     { glyph: "⬡", cls: "c-fac", name: "Factories", desc: "Deployed factories. Each assembles and upgrades its own bots." },
     { glyph: "◎", cls: "c-inf", name: "Influence", desc: "Your scale. Higher influence zooms the view out and extends your reach." },
     { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated. Reach ~90% to Ascend." },
-    { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar by your ship. Drains when acting outside base range; recharge inside it." },
+    { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at a base (fast) or factory (slow)." },
+    { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to a base or factory to deposit it." },
+  ];
+
+  // Developer experiment toggles (Settings menu). kind: style | play.
+  Economy.DEV_DEFS = [
+    { key: "sweep", name: "Light Sweep", desc: "Slow top-to-bottom light band.", kind: "style" },
+    { key: "grid", name: "Dot Grid", desc: "Subtle background dot grid.", kind: "style" },
+    { key: "bloom", name: "Extra Bloom", desc: "Stronger glow on everything.", kind: "style" },
+    { key: "scanlines", name: "CRT Scanlines", desc: "Horizontal scanline overlay.", kind: "style" },
+    { key: "vignette", name: "Vignette", desc: "Darken the screen edges.", kind: "style" },
+    { key: "invertTerrain", name: "Invert Terrain Shade", desc: "Flip to light rock / dark space.", kind: "style" },
+    { key: "infiniteEnergy", name: "Infinite Energy", desc: "Never run out of energy.", kind: "play" },
+    { key: "magnet", name: "Ore Magnet", desc: "Deposit mined ore instantly, anywhere.", kind: "play" },
+    { key: "autoAim", name: "Auto-Aim Laser", desc: "Laser targets the nearest rock automatically.", kind: "play" },
+    { key: "instantBots", name: "Instant Bots", desc: "Factories assemble bots almost instantly.", kind: "play" },
+    { key: "noCargoLimit", name: "No Cargo Limit", desc: "Carry unlimited ore.", kind: "play" },
   ];
 
   G.Economy = Economy;

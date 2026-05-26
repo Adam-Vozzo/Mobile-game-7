@@ -3,20 +3,24 @@
   "use strict";
 
   G.CFG = {
-    // ----- palette (Flipper Zero amber/orange on warm near-black) -----
+    // ----- palette (Flipper Zero amber/orange) -----
+    // Default: open/flyable space is lighter, solid rock is darker.
     COL: {
-      bg: "#0c0905",
-      bgCenter: "#1d1206",
-      rock: "#23180b", // tint filling solid terrain (distinct from caverns)
-      vignette: "rgba(3,2,0,0.55)",
-      dim: "#5e3712",
-      line: "#c2611a",
+      bg: "#150f08",
+      bgCenter: "#241a11",
+      rock: "#070402",
+      bgAlt: "#0b0804", // inverted scheme (dev toggle): dark space
+      bgCenterAlt: "#170f08",
+      rockAlt: "#2a1d0e", // inverted scheme: light rock
+      vignette: "rgba(2,1,0,0.6)",
+      dim: "#7a4a1e",
+      line: "#d2701f",
       bright: "#ff9a36",
       player: "#ffd9a0",
       crystal: "#ffce7a",
       catalyst: "#fff3cf",
       bot: "#e88a34",
-      mineralDot: "#d2922f",
+      mineralDot: "#ffb347",
       crystalDot: "#ffce7a",
       catalystDot: "#fff3cf",
       beam: "#ffcf9a",
@@ -25,7 +29,7 @@
       danger: "#ff4338",
       grid: "#ff8200",
       sweep: "#ffa64d",
-      cable: "#c2611a",
+      cable: "#d2701f",
       charge: "#ffe6b0",
       energy: "#ffffff",
     },
@@ -73,6 +77,7 @@
       energyRecharge: 75, // /s inside base range
       depletedSpeed: 0.16, // movement multiplier at 0 energy
       energyLow: 0.1, // <=10% -> bar pulses red
+      cargo0: 60, // carrying capacity at influence 1 (scales with sqrtI)
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -103,14 +108,16 @@
     // ----- influence / scale -----
     influence: { start: 1, carveExp: 1.0, rangeExp: 0.65 },
 
-    // ----- base -----
+    // ----- base / factory recharge -----
     base: { range0: 150 }, // recharge + interaction radius at influence 1 (* sqrtI)
+    factory: { range0: 80, rechargeMult: 0.25 }, // factories recharge slower, shorter range
 
     // ----- economy: upgrade costs (geometric). catalyst gates Influence. -----
     cost: {
       laserPower: { minerals: 18, growth: 1.55 },
       laserRange: { minerals: 22, growth: 1.5 },
       laserEff: { minerals: 30, growth: 1.62 },
+      cargo: { minerals: 28, growth: 1.5 },
       baseRange: { minerals: 35, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
       influence: { minerals: 60, crystals: 4, catalyst: 1, growth: 1.85, crystalGrowth: 1.7, catalystGrowth: 1.55 },
       factory: { minerals: 120, crystals: 2, growth: 2.0, crystalGrowth: 1.6 },
@@ -124,5 +131,20 @@
     // ----- misc -----
     save: { key: "coreforge.save.v2", interval: 8 },
     interactRange: 70, // factory interaction radius (* sqrtI)
+  };
+
+  // Developer toggles (experiments). Persisted; flipped live from Settings.
+  G.DEV = {
+    sweep: true,
+    grid: true,
+    bloom: false,
+    scanlines: false,
+    vignette: false,
+    invertTerrain: false,
+    infiniteEnergy: false,
+    magnet: false,
+    autoAim: false,
+    instantBots: false,
+    noCargoLimit: false,
   };
 })(window.G);

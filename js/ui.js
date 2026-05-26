@@ -29,6 +29,8 @@
       toast: document.getElementById("toast"),
       prompt: document.getElementById("prompt"),
       help: document.getElementById("btn-help"),
+      settings: document.getElementById("btn-settings"),
+      build: document.getElementById("btn-build"),
       hud: document.getElementById("hud"),
     };
     const self = this;
@@ -37,6 +39,12 @@
       if (e.target === self.el.modal) self.close();
     });
     this.el.help.addEventListener("click", () => self.openGlossary(game));
+    this.el.settings.addEventListener("click", () => self.openSettings(game));
+    this.el.build.addEventListener("click", () => game.openBuild());
+  };
+
+  UI.setBuildEnabled = function (ready) {
+    if (this.el.build) this.el.build.classList.toggle("ready", !!ready);
   };
 
   UI.updateHUD = function (game) {
@@ -78,10 +86,25 @@
     this.refresh(game);
   };
 
+  UI.openSettings = function (game) {
+    if (this.open && this.panel === "settings") {
+      this.close();
+      return;
+    }
+    this.open = true;
+    this.panel = "settings";
+    this.building = null;
+    this._confirmReset = false;
+    this.el.modal.classList.add("show");
+    this.el.title.textContent = "SETTINGS";
+    this.refresh(game);
+  };
+
   UI.close = function () {
     this.open = false;
     this.panel = null;
     this.building = null;
+    this._confirmReset = false;
     this.el.modal.classList.remove("show");
   };
 
@@ -89,6 +112,57 @@
     if (!this.open) return;
     const list = this.el.list;
     list.innerHTML = "";
+
+    if (this.panel === "settings") {
+      this.el.sub.textContent = "Data & experiments";
+      if (this._confirmReset) {
+        const warn = document.createElement("div");
+        warn.className = "settings-warn";
+        warn.textContent = "Erase ALL progress? This cannot be undone.";
+        list.appendChild(warn);
+        const conf = document.createElement("button");
+        conf.className = "upg danger";
+        conf.innerHTML = '<div class="upg-main"><div class="upg-name">Confirm Reset</div></div><div class="upg-cost">✕</div>';
+        conf.addEventListener("click", () => game.resetGame());
+        list.appendChild(conf);
+        const cancel = document.createElement("button");
+        cancel.className = "upg";
+        cancel.innerHTML = '<div class="upg-main"><div class="upg-name">Cancel</div></div>';
+        cancel.addEventListener("click", () => {
+          this._confirmReset = false;
+          this.refresh(game);
+        });
+        list.appendChild(cancel);
+      } else {
+        const reset = document.createElement("button");
+        reset.className = "upg danger-outline";
+        reset.innerHTML = '<div class="upg-main"><div class="upg-name">Reset Progress</div><div class="upg-desc">Wipe your save and start a fresh core.</div></div><div class="upg-cost">↺</div>';
+        reset.addEventListener("click", () => {
+          this._confirmReset = true;
+          this.refresh(game);
+        });
+        list.appendChild(reset);
+      }
+      const hdr = document.createElement("div");
+      hdr.className = "settings-hdr";
+      hdr.textContent = "DEVELOPER TOGGLES";
+      list.appendChild(hdr);
+      for (const def of Eco.DEV_DEFS) {
+        const on = !!G.DEV[def.key];
+        const row = document.createElement("button");
+        row.className = "toggle" + (on ? " on" : "");
+        row.innerHTML =
+          '<div class="upg-main"><div class="upg-name">' + def.name + ' <span class="upg-lvl">' + def.kind + "</span></div>" +
+          '<div class="upg-desc">' + def.desc + "</div></div>" +
+          '<div class="tgl">' + (on ? "ON" : "OFF") + "</div>";
+        row.addEventListener("click", () => {
+          game.toggleDev(def.key);
+          this.refresh(game);
+        });
+        list.appendChild(row);
+      }
+      return;
+    }
 
     if (this.panel === "glossary") {
       this.el.sub.textContent = "What the readouts at the top mean";

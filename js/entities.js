@@ -18,16 +18,50 @@
     this.energy = 1e9; // clamped to max on first update -> starts full
     this.maxEnergy = 1;
     this.inBase = true;
+    this.nearBase = true;
+    this.rechargeSource = null;
+    this.cargo = { m: 0, c: 0, k: 0 };
+    this.cargoLoad = 0;
+    this.maxCargo = 1;
   }
 
   Player.prototype.update = function (dt, input, stats, world, game) {
     const P = CFG.player;
+    const DEV = G.DEV;
     const base = game.base;
     this.maxEnergy = stats.energyMax;
+    this.maxCargo = stats.cargoCapacity;
     if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
-    const inBase = U.dist(this.x, this.y, base.x, base.y) <= stats.baseRange;
-    this.inBase = inBase;
-    const depleted = this.energy <= 0;
+
+    // --- recharge / deposit source: base (fast) or nearest factory (slow) ---
+    const dB = U.dist(this.x, this.y, base.x, base.y);
+    let src = null,
+      rate = 0;
+    if (dB <= stats.baseRange) {
+      src = base;
+      rate = P.energyRecharge;
+    } else {
+      const fr = CFG.factory.range0 * stats.sqrtI;
+      let bd = fr,
+        bf = null;
+      for (const f of game.factories) {
+        const d = U.dist(this.x, this.y, f.x, f.y);
+        if (d <= bd) {
+          bd = d;
+          bf = f;
+        }
+      }
+      if (bf) {
+        src = bf;
+        rate = P.energyRecharge * CFG.factory.rechargeMult;
+      }
+    }
+    this.nearBase = dB <= stats.baseRange;
+    this.inBase = this.nearBase;
+    this.rechargeSource = src;
+    const depositing = !!src || DEV.magnet;
+
+    const depleted = !DEV.infiniteEnergy && this.energy <= 0;
     const moveMult = depleted ? P.depletedSpeed : 1;
 
     // --- steering ---
@@ -42,13 +76,11 @@
     this.thrusting = thrust;
     const nx = Math.cos(this.angle),
       ny = Math.sin(this.angle);
-    // center inside solid terrain => move 90% slower
     const dens = world.densityAt(this.x, this.y);
-    const rockMult = dens > T ? 0.1 : 1;
+    const rockMult = dens > T ? 0.1 : 1; // center in solid terrain => 90% slower
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
-    // --- drag (higher base retention => more momentum) ---
     let keep = Math.pow(P.drag, dt * 60);
     if (dens > T) keep *= Math.pow(0.5, dt * 60);
     this.vx *= keep;
@@ -73,24 +105,44 @@
       this.vy *= 0.3;
     }
 
-    // --- mining laser (disabled when fully depleted) ---
+    // --- mining laser (forward, or auto-aim to nearest rock) ---
     let firing = false;
     if (!depleted) {
       const range = stats.laserRange;
       const step = CFG.laser.step;
-      const sx = this.x + nx * stats.playerRadius;
-      const sy = this.y + ny * stats.playerRadius;
-      let hit = false,
-        hx = 0,
-        hy = 0;
-      for (let dd = 0; dd <= range; dd += step) {
-        const px = sx + nx * dd,
-          py = sy + ny * dd;
-        if (world.densityAt(px, py) > T) {
-          hit = true;
-          hx = px;
-          hy = py;
-          break;
+      let sx, sy, hit = false, hx = 0, hy = 0;
+      if (DEV.autoAim) {
+        sx = this.x;
+        sy = this.y;
+        let best = Infinity;
+        for (let a = 0; a < 18; a++) {
+          const ang = (a / 18) * U.TAU,
+            cx = Math.cos(ang),
+            cy = Math.sin(ang);
+          for (let dd = step; dd <= range; dd += step) {
+            if (world.densityAt(sx + cx * dd, sy + cy * dd) > T) {
+              if (dd < best) {
+                best = dd;
+                hx = sx + cx * dd;
+                hy = sy + cy * dd;
+                hit = true;
+              }
+              break;
+            }
+          }
+        }
+      } else {
+        sx = this.x + nx * stats.playerRadius;
+        sy = this.y + ny * stats.playerRadius;
+        for (let dd = 0; dd <= range; dd += step) {
+          const px = sx + nx * dd,
+            py = sy + ny * dd;
+          if (world.densityAt(px, py) > T) {
+            hit = true;
+            hx = px;
+            hy = py;
+            break;
+          }
         }
       }
       this.beam.active = hit;
@@ -101,7 +153,23 @@
         this.beam.x2 = hx;
         this.beam.y2 = hy;
         const got = world.carve(hx, hy, stats.carveR, stats.laserPower * dt);
-        game.addResources(got.minerals * stats.yield, got.crystals * stats.yield, got.catalyst * stats.yield);
+        let gm = got.minerals * stats.yield,
+          gc = got.crystals * stats.yield,
+          gk = got.catalyst * stats.yield;
+        if (!DEV.noCargoLimit) {
+          const room = Math.max(0, this.maxCargo - (this.cargo.m + this.cargo.c + this.cargo.k));
+          const tot = gm + gc + gk;
+          if (tot > room) {
+            const s = room / tot;
+            gm *= s;
+            gc *= s;
+            gk *= s;
+          }
+        }
+        this.cargo.m += gm;
+        this.cargo.c += gc;
+        this.cargo.k += gk;
+        if (gm + gc + gk > 0) game.spawnCollect(hx, hy);
         game.spawnSpark(hx, hy);
       } else {
         this.beam.x2 = sx + nx * range;
@@ -111,9 +179,18 @@
       this.beam.active = false;
     }
 
-    // --- energy: recharge inside base range, drain outside ---
-    if (inBase) {
-      this.energy = Math.min(this.maxEnergy, this.energy + P.energyRecharge * dt);
+    // --- deposit cargo at base/factory (or anywhere with the magnet) ---
+    if (depositing && (this.cargo.m || this.cargo.c || this.cargo.k)) {
+      game.addResources(this.cargo.m, this.cargo.c, this.cargo.k, false);
+      this.cargo.m = this.cargo.c = this.cargo.k = 0;
+    }
+    this.cargoLoad = this.cargo.m + this.cargo.c + this.cargo.k;
+
+    // --- energy ---
+    if (DEV.infiniteEnergy) {
+      this.energy = this.maxEnergy;
+    } else if (src) {
+      this.energy = Math.min(this.maxEnergy, this.energy + rate * dt);
     } else {
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
@@ -303,7 +380,7 @@
     const bay = Math.floor(this.botStats.botBay);
     if (this.bots.length < bay) {
       this.assemble += dt;
-      if (this.assemble >= CFG.bot.assembleTime) {
+      if (this.assemble >= (G.DEV.instantBots ? 0.15 : CFG.bot.assembleTime)) {
         this.assemble = 0;
         this.bots.push(new Bot(this.x, this.y, this, (this.seed + this.bots.length * 7919) >>> 0));
       }
