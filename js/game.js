@@ -793,9 +793,9 @@
     const c = cam.worldToScreen(b.x2, b.y2, iw, ih);
     ctx.save();
     ctx.strokeStyle = COL.beam;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = G.DEV.thickBeam ? 3 : 1;
     ctx.shadowColor = COL.beam;
-    ctx.shadowBlur = gb(3);
+    ctx.shadowBlur = gb(G.DEV.thickBeam ? 5 : 3);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(c.x, c.y);

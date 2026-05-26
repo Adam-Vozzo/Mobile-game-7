@@ -420,25 +420,28 @@
           const gj = U.clamp(Math.round((wy + this.radius) / this.cell), 0, this.NY);
           const id = gj * this.P + gi;
           if (this.special[id]) {
-            const tw = 0.45 + 0.55 * Math.sin(time * 4 + ax * 2.3 + ay * 1.7);
+            // Catalyst: brightest, a twinkling X (diagonal sparkle)
+            const tw = 0.5 + 0.5 * Math.sin(time * 5 + ax * 2.3 + ay * 1.7);
             ctx.fillStyle = COL.catalystDot;
             ctx.globalAlpha = 0.35 + 0.65 * tw;
-            ctx.fillRect(sx, sy, tw > 0.7 ? 2 : 1, 1);
-            ctx.globalAlpha = 1;
-          } else if (this.crystal[id] && h < 0.32) {
-            ctx.fillStyle = COL.crystalDot;
             ctx.fillRect(sx, sy, 1, 1);
+            if (tw > 0.35) {
+              ctx.fillRect(sx - 1, sy - 1, 1, 1);
+              ctx.fillRect(sx + 1, sy - 1, 1, 1);
+              ctx.fillRect(sx - 1, sy + 1, 1, 1);
+              ctx.fillRect(sx + 1, sy + 1, 1, 1);
+            }
+            ctx.globalAlpha = 1;
+          } else if (this.crystal[id] && h < 0.34) {
+            // Crystal: a pale vertical shard
+            ctx.fillStyle = COL.crystalDot;
+            ctx.fillRect(sx, sy - 1, 1, 3);
           } else if (this.richness[id] > 0.5 && h < 0.42) {
-            // ore: a small diamond (not a square) so it reads as a gem, not a star
+            // Mineral: a gold diamond (orthogonal plus)
             ctx.fillStyle = COL.mineralDot;
             ctx.fillRect(sx, sy - 1, 1, 1);
             ctx.fillRect(sx - 1, sy, 3, 1);
             ctx.fillRect(sx, sy + 1, 1, 1);
-            if (h < 0.14) {
-              // occasional bigger cluster nearby
-              ctx.fillRect(sx + 2, sy + 1, 1, 1);
-              ctx.fillRect(sx + 3, sy + 1, 1, 1);
-            }
           }
         }
       }

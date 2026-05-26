@@ -5,8 +5,9 @@
   --dim: #8a5526;
   --panel: #160d06;
   --panel-line: #5a3413;
-  --crystal: #ffce7a;
-  --catalyst: #fff3cf;
+  --mineral: #ff9a2e;
+  --crystal: #ffe2a6;
+  --catalyst: #fffdf2;
   --danger: #ff4338;
 }
 
@@ -68,7 +69,7 @@ body {
   opacity: 0.95;
 }
 .ic-min {
-  color: #c2861a;
+  color: var(--mineral);
 }
 .ic-cry {
   color: var(--crystal);
@@ -335,7 +336,7 @@ body {
   font-size: 13px;
 }
 .c-min {
-  color: #c2861a;
+  color: var(--mineral);
 }
 .c-cry {
   color: var(--crystal);
@@ -421,7 +422,7 @@ body {
   color: var(--crystal);
 }
 .gloss-ic.c-min {
-  color: #ffb347;
+  color: var(--mineral);
 }
 
 /* tabs */

@@ -17,12 +17,12 @@
       line: "#d2701f",
       bright: "#ff9a36",
       player: "#ffd9a0",
-      crystal: "#ffce7a",
-      catalyst: "#fff3cf",
+      crystal: "#ffe2a6",
+      catalyst: "#fffdf2",
       bot: "#e88a34",
-      mineralDot: "#ffb347",
-      crystalDot: "#ffce7a",
-      catalystDot: "#fff3cf",
+      mineralDot: "#ff9a2e",
+      crystalDot: "#ffe2a6",
+      catalystDot: "#fffdf2",
       beam: "#ffcf9a",
       hud: "#ff9a36",
       hudDim: "#8a5526",
@@ -150,6 +150,7 @@
     parallaxStars: false,
     showFps: false,
     botTargets: false,
+    thickBeam: false,
     // gameplay toggles
     veinOnly: false,
     laserHeat: false,
@@ -175,5 +176,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b12";
+  G.BUILD = "2026-05-26 · b13";
 })(window.G);
