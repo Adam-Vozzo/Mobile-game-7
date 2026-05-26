@@ -65,8 +65,8 @@
     // ----- player ship (asteroids-style) -----
     player: {
       radius0: 6,
-      accel: 470,
-      maxSpeed: 340,
+      accel: 420,
+      maxSpeed: 290,
       turnRate: 4.4,
       drag: 0.92, // higher = more glide / momentum
       rockDrag: 0.45,
@@ -74,7 +74,7 @@
       maxEnergy0: 150, // scales with sqrt(influence)
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
-      energyRecharge: 75, // /s inside base range
+      energyRecharge: 55, // /s inside base range
       depletedSpeed: 0.16, // movement multiplier at 0 energy
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 60, // carrying capacity at influence 1 (scales with sqrtI)

@@ -334,6 +334,7 @@
       this.carry.c += got.crystals * yieldMult;
       this.carry.k += got.catalyst * yieldMult;
       game.spawnSpark(this.mineX, this.mineY);
+      game.spawnBotCollect(this.mineX, this.mineY, this);
       // sit just outside the face and follow it inward as it recedes
       const bx = this.mineX - Math.cos(this.mineDir) * bstats.botCarveR;
       const by = this.mineY - Math.sin(this.mineDir) * bstats.botCarveR;

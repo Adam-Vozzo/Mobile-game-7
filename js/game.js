@@ -219,28 +219,35 @@
   };
   // Ore mote spawned at (x,y) that arcs into the ship.
   Game.prototype.spawnCollect = function (x, y) {
-    if (this.particles.length > 300) return;
+    if (this.particles.length > 320) return;
     if (Math.random() > 0.7) return;
-    this._mote(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, true, 0, 0, COL.mineralDot);
+    this._mote(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, this.player, 0, 0, COL.mineralDot);
+  };
+  // Ore mote that arcs into a mining bot as it receives minerals.
+  Game.prototype.spawnBotCollect = function (x, y, bot) {
+    if (this.particles.length > 320) return;
+    if (Math.random() > 0.3) return;
+    this._mote(x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4, bot, 0, 0, COL.mineralDot);
   };
   // Ore mote that arcs from the ship into a base/factory while depositing.
   Game.prototype.spawnDepositMote = function (sx, sy, tx, ty) {
-    if (this.particles.length > 300) return;
+    if (this.particles.length > 320) return;
     if (Math.random() > 0.55) return;
-    this._mote(sx + (Math.random() - 0.5) * 6, sy + (Math.random() - 0.5) * 6, false, tx, ty, COL.charge);
+    this._mote(sx + (Math.random() - 0.5) * 6, sy + (Math.random() - 0.5) * 6, null, tx, ty, COL.charge);
   };
-  Game.prototype._mote = function (x0, y0, toShip, tx, ty, c) {
+  // target: a live entity (homes to target.x/target.y) or null for fixed (tx,ty).
+  Game.prototype._mote = function (x0, y0, target, tx, ty, c) {
     this.particles.push({
       mote: true,
       x: x0,
       y: y0,
       x0: x0,
       y0: y0,
+      target: target,
       tx: tx,
       ty: ty,
-      toShip: toShip,
       t: 0,
-      dur: 0.6 + Math.random() * 0.45, // slower, clearly visible
+      dur: 0.55 + Math.random() * 0.4,
       arc: (Math.random() * 2 - 1) * 0.22, // random narrow arc
       c: c,
     });
@@ -251,8 +258,8 @@
       const q = p[i];
       if (q.mote) {
         q.t += dt / q.dur;
-        const tx = q.toShip ? this.player.x : q.tx;
-        const ty = q.toShip ? this.player.y : q.ty;
+        const tx = q.target ? q.target.x : q.tx;
+        const ty = q.target ? q.target.y : q.ty;
         const u = q.t < 1 ? q.t : 1;
         const dx = tx - q.x0,
           dy = ty - q.y0;
