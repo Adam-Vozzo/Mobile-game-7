@@ -186,32 +186,35 @@
     // Rock fill can be coarser than the contour without hurting the look,
     // which keeps the far-zoom (whole-core) view fast.
     const fillStep = Math.max(step, Math.ceil(across / 64));
-    this._fillRock(ctx, cam, vw, vh, i0, i1, j0, j1, fillStep);
+    const COL = G.CFG.COL;
+    const camx = cam.x,
+      camy = cam.y,
+      scale = cam.scale,
+      hw = vw * 0.5,
+      hh = vh * 0.5;
+
+    // 1) rock fill (dark) — keep the path to clip the glow into it later
+    const rockPath = this._rockPath(i0, i1, j0, j1, fillStep, camx, camy, scale, hw, hh);
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = G.DEV.invertTerrain ? COL.rockAlt : COL.rock;
+    ctx.fill(rockPath);
+    ctx.restore();
+
+    // 2) textured dots
     this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
 
-    const COL = G.CFG.COL;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = COL.line;
-    if (G.CFG.render.glow) {
-      ctx.shadowColor = COL.bright;
-      ctx.shadowBlur = G.DEV.bloom ? 9 : 5; // bleeds onto the rock fill -> inner-glow edge
-    }
-    ctx.beginPath();
-    const seg = (ax, ay, bx, by) => {
-      const a = cam.worldToScreen(ax, ay, vw, vh);
-      const b = cam.worldToScreen(bx, by, vw, vh);
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-    };
+    // 3) build the contour (marching squares) directly in screen coords
+    const cont = new Path2D();
     for (let j = j0; j < j1; j += step) {
       const jj = Math.min(j + step, this.NY);
-      const wy0 = this.worldY(j),
-        wy1 = this.worldY(jj);
+      const sj0 = hh + (this.worldY(j) - camy) * scale;
+      const sj1 = hh + (this.worldY(jj) - camy) * scale;
       for (let i = i0; i < i1; i += step) {
         const ii = Math.min(i + step, this.NX);
         const va = d[j * P + i],
-          vb = d[j * P + ii];
-        const vc = d[jj * P + ii],
+          vb = d[j * P + ii],
+          vc = d[jj * P + ii],
           vd = d[jj * P + i];
         const c0 = va > T,
           c1 = vb > T,
@@ -219,12 +222,12 @@
           c3 = vd > T;
         const mask = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
         if (mask === 0 || mask === 15) continue;
-        const wx0 = this.worldX(i),
-          wx1 = this.worldX(ii);
-        const top = () => [U.lerp(wx0, wx1, (T - va) / (vb - va)), wy0];
-        const right = () => [wx1, U.lerp(wy0, wy1, (T - vb) / (vc - vb))];
-        const bot = () => [U.lerp(wx1, wx0, (T - vc) / (vd - vc)), wy1];
-        const left = () => [wx0, U.lerp(wy1, wy0, (T - vd) / (va - vd))];
+        const si0 = hw + (this.worldX(i) - camx) * scale;
+        const si1 = hw + (this.worldX(ii) - camx) * scale;
+        const top = () => [si0 + (si1 - si0) * ((T - va) / (vb - va)), sj0];
+        const right = () => [si1, sj0 + (sj1 - sj0) * ((T - vb) / (vc - vb))];
+        const bot = () => [si1 + (si0 - si1) * ((T - vc) / (vd - vc)), sj1];
+        const left = () => [si0, sj1 + (sj0 - sj1) * ((T - vd) / (va - vd))];
         const crossed = [];
         if (c0 !== c1) crossed.push(top);
         if (c1 !== c2) crossed.push(right);
@@ -233,7 +236,8 @@
         if (crossed.length === 2) {
           const a = crossed[0](),
             b = crossed[1]();
-          seg(a[0], a[1], b[0], b[1]);
+          cont.moveTo(a[0], a[1]);
+          cont.lineTo(b[0], b[1]);
         } else if (crossed.length === 4) {
           const center = (va + vb + vc + vd) / 4 > T;
           const t = top(),
@@ -241,34 +245,51 @@
             b = bot(),
             l = left();
           if (center === c0) {
-            seg(t[0], t[1], r[0], r[1]);
-            seg(b[0], b[1], l[0], l[1]);
+            cont.moveTo(t[0], t[1]);
+            cont.lineTo(r[0], r[1]);
+            cont.moveTo(b[0], b[1]);
+            cont.lineTo(l[0], l[1]);
           } else {
-            seg(t[0], t[1], l[0], l[1]);
-            seg(r[0], r[1], b[0], b[1]);
+            cont.moveTo(t[0], t[1]);
+            cont.lineTo(l[0], l[1]);
+            cont.moveTo(r[0], r[1]);
+            cont.lineTo(b[0], b[1]);
           }
         }
       }
     }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+
+    // 4) stroke. When zoomed in, clip the glow to the rock so it only bleeds
+    // INWARD (inner glow), then lay a crisp edge line on top. Far out, one pass.
+    const blur = (G.CFG.render.glow ? (G.DEV.bloom ? 9 : 5) : 0) * G.DEV.glow;
+    ctx.lineWidth = 1;
+    if (blur > 0.1 && fillStep === step) {
+      ctx.save();
+      ctx.clip(rockPath);
+      ctx.strokeStyle = COL.bright;
+      ctx.shadowColor = COL.bright;
+      ctx.shadowBlur = blur;
+      ctx.stroke(cont);
+      ctx.restore();
+      ctx.strokeStyle = COL.line;
+      ctx.shadowBlur = 0;
+      ctx.stroke(cont);
+    } else {
+      ctx.strokeStyle = COL.line;
+      ctx.shadowColor = COL.bright;
+      ctx.shadowBlur = blur;
+      ctx.stroke(cont);
+      ctx.shadowBlur = 0;
+    }
   };
 
-  // Fill solid terrain with a warm tint (distinct from the dark caverns). The
-  // contour stroke's glow then bleeds onto this fill, reading as an edge glow.
-  World.prototype._fillRock = function (ctx, cam, vw, vh, i0, i1, j0, j1, step) {
+  // Build a Path2D (screen coords) of solid terrain, run-length-merged. Used
+  // both to fill the rock and to clip the inner-glow stroke.
+  World.prototype._rockPath = function (i0, i1, j0, j1, step, camx, camy, scale, hw, hh) {
     const P = this.P,
       d = this.density,
       th = this.cfg.threshold;
-    const camx = cam.x,
-      camy = cam.y,
-      scale = cam.scale,
-      hw = vw * 0.5,
-      hh = vh * 0.5;
-    ctx.save();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = G.DEV.invertTerrain ? G.CFG.COL.rockAlt : G.CFG.COL.rock;
-    ctx.beginPath();
+    const path = new Path2D();
     for (let j = j0; j < j1; j += step) {
       const jj = Math.min(j + step, this.NY);
       const sy0 = hh + (this.worldY(j) - camy) * scale;
@@ -293,7 +314,7 @@
         }
         if (runStart >= 0) {
           const rx0 = hw + (this.worldX(runStart) - camx) * scale;
-          ctx.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
+          path.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
           runStart = -1;
         }
         if (mask === 0) continue;
@@ -311,18 +332,17 @@
         if (c3) poly.push(wx0, wy1);
         if (c3 !== c0) poly.push(wx0, U.lerp(wy1, wy0, (th - vd) / (va - vd)));
         if (poly.length >= 6) {
-          ctx.moveTo(hw + (poly[0] - camx) * scale, hh + (poly[1] - camy) * scale);
-          for (let p = 2; p < poly.length; p += 2) ctx.lineTo(hw + (poly[p] - camx) * scale, hh + (poly[p + 1] - camy) * scale);
-          ctx.closePath();
+          path.moveTo(hw + (poly[0] - camx) * scale, hh + (poly[1] - camy) * scale);
+          for (let p = 2; p < poly.length; p += 2) path.lineTo(hw + (poly[p] - camx) * scale, hh + (poly[p + 1] - camy) * scale);
+          path.closePath();
         }
       }
       if (runStart >= 0) {
         const rx0 = hw + (this.worldX(runStart) - camx) * scale;
-        ctx.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
+        path.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
       }
     }
-    ctx.fill();
-    ctx.restore();
+    return path;
   };
 
   // World-anchored dots (stable while panning): stars only in cleared caverns,

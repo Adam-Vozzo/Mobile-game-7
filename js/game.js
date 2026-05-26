@@ -6,7 +6,7 @@
   const COL = CFG.COL;
   const Eco = G.Economy;
   const TAU = U.TAU;
-  const gb = (b) => (G.DEV.bloom ? b * 1.9 : b); // glow-blur with optional bloom
+  const gb = (b) => (G.DEV.bloom ? b * 1.9 : b) * G.DEV.glow; // glow-blur w/ bloom + slider
 
   function Game() {
     this.state = Eco.defaultState();
@@ -70,6 +70,7 @@
     if (this.state.catalyst == null) this.state.catalyst = 0;
     if (this.state.yieldMult == null) this.state.yieldMult = 1;
     if (this.state.ascends == null) this.state.ascends = 0;
+    if (this.state.augments == null) this.state.augments = {};
     for (const k in def.levels) if (this.state.levels[k] == null) this.state.levels[k] = 0;
     this.world = new G.World(data.seed >>> 0);
     if (data.density) G.Save.applyDensity(this.world, data.density);
@@ -142,6 +143,47 @@
     return true;
   };
 
+  Game.prototype.buyAugment = function (id) {
+    if (Eco.ownsAugment(this.state, id)) return false;
+    const def = Eco.augmentDef(id);
+    if (!def || !Eco.canPay(this.state, def.cost)) return false;
+    Eco.pay(this.state, def.cost);
+    this.state.augments[id] = true;
+    this.recomputeStats();
+    G.UI.updateHUD(this);
+    G.UI.toast("Augment installed: " + def.name, 2600);
+    return true;
+  };
+
+  // Nearest unmined Catalyst vein to a point (cell scan, capped). For the
+  // Resonance Scanner augment; refreshed periodically, not every frame.
+  Game.prototype.findNearestSpecial = function (x, y) {
+    const w = this.world,
+      T = G.CFG.world.threshold;
+    const gi = Math.round((x + w.radius) / w.cell);
+    const gj = Math.round((y + w.radius) / w.cell);
+    const RAD = 80; // cells
+    let best = null,
+      bd = Infinity;
+    for (let dj = -RAD; dj <= RAD; dj++) {
+      const j = gj + dj;
+      if (j < 0 || j > w.NY) continue;
+      for (let di = -RAD; di <= RAD; di++) {
+        const i = gi + di;
+        if (i < 0 || i > w.NX) continue;
+        const id = j * w.P + i;
+        if (w.special[id] && w.density[id] > T) {
+          const d = di * di + dj * dj;
+          if (d < bd) {
+            bd = d;
+            best = { x: w.worldX(i), y: w.worldY(j) };
+          }
+        }
+      }
+    }
+    return best;
+  };
+
   Game.prototype.spawnFactory = function (x, y) {
     const fac = new G.Factory(x, y, (Math.random() * 1e9) >>> 0);
     fac.recompute(this.stats.influence);
@@ -194,6 +236,12 @@
 
   Game.prototype.toggleDev = function (key) {
     G.DEV[key] = !G.DEV[key];
+    G.Save.save(this);
+  };
+
+  Game.prototype.setDevValue = function (key, val) {
+    G.DEV[key] = val;
+    this.recomputeStats();
     G.Save.save(this);
   };
 
@@ -367,6 +415,7 @@
       this._secTimer = 0;
       G.UI.updateHUD(this);
       if (G.UI.open) G.UI.refresh(this);
+      this.compassCatalyst = Eco.ownsAugment(this.state, "resonance") ? this.findNearestSpecial(this.player.x, this.player.y) : null;
     }
     this._saveTimer += dt;
     if (this._saveTimer >= CFG.save.interval) {
@@ -620,6 +669,42 @@
     }
     const cfh = bh * cfrac;
     ctx.fillRect(cbx, by + (bh - cfh), bw, cfh);
+    ctx.restore();
+
+    // augment compasses: arc + needle pointing to base / nearest catalyst
+    const owns = this.state.augments || {};
+    const rc = r * 2.7;
+    if (owns.compass) {
+      const bs = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
+      this._compass(ctx, sp.x, sp.y, rc, Math.atan2(bs.y - sp.y, bs.x - sp.x), COL.bright);
+    }
+    if (owns.resonance && this.compassCatalyst) {
+      const cs = cam.worldToScreen(this.compassCatalyst.x, this.compassCatalyst.y, iw, ih);
+      this._compass(ctx, sp.x, sp.y, rc * 0.82, Math.atan2(cs.y - sp.y, cs.x - sp.x), COL.catalyst);
+    }
+  };
+
+  // A subtle arc on the hull with a small triangle pointing along `ang`.
+  Game.prototype._compass = function (ctx, cx, cy, r, ang, color) {
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = gb(2);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, ang - 0.5, ang + 0.5);
+    ctx.stroke();
+    ctx.translate(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    ctx.rotate(ang);
+    const s = Math.max(r * 0.16, 2.2);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(s, 0);
+    ctx.lineTo(-s * 0.7, s * 0.7);
+    ctx.lineTo(-s * 0.7, -s * 0.7);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   };
 

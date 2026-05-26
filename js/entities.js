@@ -28,6 +28,7 @@
   Player.prototype.update = function (dt, input, stats, world, game) {
     const P = CFG.player;
     const DEV = G.DEV;
+    const aug = game.state.augments || {};
     const base = game.base;
     this.maxEnergy = stats.energyMax;
     this.maxCargo = stats.cargoCapacity;
@@ -76,7 +77,8 @@
     const nx = Math.cos(this.angle),
       ny = Math.sin(this.angle);
     const dens = world.densityAt(this.x, this.y);
-    const rockMult = dens > T ? 0.1 : 1; // center in solid terrain => 90% slower
+    // center in solid terrain => 90% slower (less with Hull Plating)
+    const rockMult = dens > T ? (aug.hullPlating ? 0.35 : 0.1) : 1;
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
@@ -181,7 +183,7 @@
     // --- deposit cargo gradually at base/factory (motes flow ship -> source) ---
     const load = this.cargo.m + this.cargo.c + this.cargo.k;
     if (src && load > 0) {
-      const take = Math.min(load, (this.maxCargo + 24) * dt); // empties a full hold in ~1s
+      const take = Math.min(load, (this.maxCargo + 24) * (aug.tractor ? 2 : 1) * dt); // ~1s (0.5s with Tractor)
       const f = take / load;
       const dm = this.cargo.m * f,
         dc = this.cargo.c * f,
@@ -201,7 +203,7 @@
     if (DEV.infiniteEnergy) {
       this.energy = this.maxEnergy;
     } else if (src) {
-      this.energy = Math.min(this.maxEnergy, this.energy + rate * dt);
+      this.energy = Math.min(this.maxEnergy, this.energy + rate * DEV.recharge * dt);
     } else {
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;

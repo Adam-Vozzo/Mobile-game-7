@@ -65,8 +65,8 @@
     // ----- player ship (asteroids-style) -----
     player: {
       radius0: 6,
-      accel: 420,
-      maxSpeed: 290,
+      accel: 360,
+      maxSpeed: 230,
       turnRate: 4.4,
       drag: 0.92, // higher = more glide / momentum
       rockDrag: 0.45,
@@ -133,8 +133,10 @@
     interactRange: 70, // factory interaction radius (* sqrtI)
   };
 
-  // Developer toggles (experiments). Persisted; flipped live from Settings.
+  // Developer toggles + slider multipliers (experiments). Persisted; edited
+  // live from Settings.
   G.DEV = {
+    // toggles
     sweep: true,
     grid: true,
     bloom: false,
@@ -146,5 +148,12 @@
     autoAim: false,
     instantBots: false,
     noCargoLimit: false,
+    // slider multipliers (1 = default)
+    shipSpeed: 1,
+    turn: 1,
+    mining: 1,
+    botSpeed: 1,
+    recharge: 1,
+    glow: 1,
   };
 })(window.G);

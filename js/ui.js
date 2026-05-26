@@ -24,6 +24,7 @@
       modal: document.getElementById("modal"),
       title: document.getElementById("modal-title"),
       list: document.getElementById("modal-list"),
+      tabs: document.getElementById("modal-tabs"),
       sub: document.getElementById("modal-sub"),
       close: document.getElementById("modal-close"),
       toast: document.getElementById("toast"),
@@ -68,6 +69,7 @@
     this.open = true;
     this.panel = panel;
     this.building = building;
+    this.tab = panel === "base" ? "upgrades" : null;
     this.el.modal.classList.add("show");
     this.el.title.textContent = panel === "base" ? "COMMAND BASE" : "FACTORY";
     this.refresh(game);
@@ -81,6 +83,7 @@
     this.open = true;
     this.panel = "glossary";
     this.building = null;
+    this.tab = null;
     this.el.modal.classList.add("show");
     this.el.title.textContent = "GLOSSARY";
     this.refresh(game);
@@ -94,6 +97,7 @@
     this.open = true;
     this.panel = "settings";
     this.building = null;
+    this.tab = "gameplay";
     this._confirmReset = false;
     this.el.modal.classList.add("show");
     this.el.title.textContent = "SETTINGS";
@@ -105,7 +109,30 @@
     this.panel = null;
     this.building = null;
     this._confirmReset = false;
+    this.el.tabs.style.display = "none";
+    this.el.tabs.innerHTML = "";
     this.el.modal.classList.remove("show");
+  };
+
+  UI.renderTabs = function (tabs, game) {
+    const el = this.el.tabs;
+    el.innerHTML = "";
+    if (!tabs) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "flex";
+    for (const t of tabs) {
+      const b = document.createElement("button");
+      b.className = "tab" + (this.tab === t.id ? " active" : "");
+      b.textContent = t.name;
+      const id = t.id;
+      b.addEventListener("click", () => {
+        this.tab = id;
+        this.refresh(game);
+      });
+      el.appendChild(b);
+    }
   };
 
   UI.refresh = function (game) {
@@ -114,57 +141,13 @@
     list.innerHTML = "";
 
     if (this.panel === "settings") {
-      this.el.sub.textContent = "Data & experiments";
-      if (this._confirmReset) {
-        const warn = document.createElement("div");
-        warn.className = "settings-warn";
-        warn.textContent = "Erase ALL progress? This cannot be undone.";
-        list.appendChild(warn);
-        const conf = document.createElement("button");
-        conf.className = "upg danger";
-        conf.innerHTML = '<div class="upg-main"><div class="upg-name">Confirm Reset</div></div><div class="upg-cost">✕</div>';
-        conf.addEventListener("click", () => game.resetGame());
-        list.appendChild(conf);
-        const cancel = document.createElement("button");
-        cancel.className = "upg";
-        cancel.innerHTML = '<div class="upg-main"><div class="upg-name">Cancel</div></div>';
-        cancel.addEventListener("click", () => {
-          this._confirmReset = false;
-          this.refresh(game);
-        });
-        list.appendChild(cancel);
-      } else {
-        const reset = document.createElement("button");
-        reset.className = "upg danger-outline";
-        reset.innerHTML = '<div class="upg-main"><div class="upg-name">Reset Progress</div><div class="upg-desc">Wipe your save and start a fresh core.</div></div><div class="upg-cost">↺</div>';
-        reset.addEventListener("click", () => {
-          this._confirmReset = true;
-          this.refresh(game);
-        });
-        list.appendChild(reset);
-      }
-      const hdr = document.createElement("div");
-      hdr.className = "settings-hdr";
-      hdr.textContent = "DEVELOPER TOGGLES";
-      list.appendChild(hdr);
-      for (const def of Eco.DEV_DEFS) {
-        const on = !!G.DEV[def.key];
-        const row = document.createElement("button");
-        row.className = "toggle" + (on ? " on" : "");
-        row.innerHTML =
-          '<div class="upg-main"><div class="upg-name">' + def.name + ' <span class="upg-lvl">' + def.kind + "</span></div>" +
-          '<div class="upg-desc">' + def.desc + "</div></div>" +
-          '<div class="tgl">' + (on ? "ON" : "OFF") + "</div>";
-        row.addEventListener("click", () => {
-          game.toggleDev(def.key);
-          this.refresh(game);
-        });
-        list.appendChild(row);
-      }
+      this.renderTabs([{ id: "gameplay", name: "Gameplay" }, { id: "visual", name: "Visual" }, { id: "cheats", name: "Cheats" }], game);
+      this._renderSettings(game, list);
       return;
     }
 
     if (this.panel === "glossary") {
+      this.renderTabs(null);
       this.el.sub.textContent = "What the readouts at the top mean";
       for (const e of Eco.GLOSSARY) {
         const row = document.createElement("div");
@@ -178,12 +161,16 @@
       return;
     }
 
-    const defs = Eco.UPGRADES[this.panel];
     const s = game.state;
     const isFactory = this.panel === "factory";
 
     if (this.panel === "base") {
+      this.renderTabs([{ id: "upgrades", name: "Upgrades" }, { id: "augments", name: "Augments" }], game);
       this.el.sub.textContent = "Influence ◎" + U.formatNum(game.stats.influence) + "  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
+      if (this.tab === "augments") {
+        this._renderAugments(game, list);
+        return;
+      }
       if (game.world.carvedFraction() >= 0.9) {
         const asc = document.createElement("button");
         asc.className = "upg ascend";
@@ -195,10 +182,12 @@
         list.appendChild(asc);
       }
     } else {
+      this.renderTabs(null);
       const bs = this.building.botStats;
       this.el.sub.textContent = "This factory · " + this.building.bots.length + "/" + Math.floor(bs.botBay) + " bots";
     }
 
+    const defs = Eco.UPGRADES[this.panel];
     for (const def of defs) {
       const lvl = isFactory ? this.building.levels[def.id] || 0 : s.levels[def.id] || 0;
       const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : lvl);
@@ -237,6 +226,114 @@
           this.updateHUD(game);
         }
       });
+      list.appendChild(row);
+    }
+  };
+
+  UI._renderSettings = function (game, list) {
+    this.el.sub.textContent = "Experiments & data";
+    // Reset (always available)
+    if (this._confirmReset) {
+      const warn = document.createElement("div");
+      warn.className = "settings-warn";
+      warn.textContent = "Erase ALL progress? This cannot be undone.";
+      list.appendChild(warn);
+      const conf = document.createElement("button");
+      conf.className = "upg danger";
+      conf.innerHTML = '<div class="upg-main"><div class="upg-name">Confirm Reset</div></div><div class="upg-cost">✕</div>';
+      conf.addEventListener("click", () => game.resetGame());
+      list.appendChild(conf);
+      const cancel = document.createElement("button");
+      cancel.className = "upg";
+      cancel.innerHTML = '<div class="upg-main"><div class="upg-name">Cancel</div></div>';
+      cancel.addEventListener("click", () => {
+        this._confirmReset = false;
+        this.refresh(game);
+      });
+      list.appendChild(cancel);
+    } else {
+      const reset = document.createElement("button");
+      reset.className = "upg danger-outline";
+      reset.innerHTML = '<div class="upg-main"><div class="upg-name">Reset Progress</div><div class="upg-desc">Wipe your save and start a fresh core.</div></div><div class="upg-cost">↺</div>';
+      reset.addEventListener("click", () => {
+        this._confirmReset = true;
+        this.refresh(game);
+      });
+      list.appendChild(reset);
+    }
+
+    if (this.tab === "gameplay") {
+      for (const sl of Eco.DEV_SLIDERS) list.appendChild(this._slider(game, sl));
+    } else {
+      const kind = this.tab === "visual" ? "visual" : "cheat";
+      for (const def of Eco.DEV_DEFS) {
+        if (def.kind !== kind) continue;
+        const on = !!G.DEV[def.key];
+        const row = document.createElement("button");
+        row.className = "toggle" + (on ? " on" : "");
+        row.innerHTML =
+          '<div class="upg-main"><div class="upg-name">' + def.name + "</div>" +
+          '<div class="upg-desc">' + def.desc + "</div></div>" +
+          '<div class="tgl">' + (on ? "ON" : "OFF") + "</div>";
+        row.addEventListener("click", () => {
+          game.toggleDev(def.key);
+          this.refresh(game);
+        });
+        list.appendChild(row);
+      }
+    }
+  };
+
+  UI._slider = function (game, sl) {
+    const val = G.DEV[sl.key];
+    const row = document.createElement("div");
+    row.className = "slider";
+    row.innerHTML = '<div class="slider-top"><span class="slider-name">' + sl.name + '</span><span class="slider-val">' + val.toFixed(2) + "×</span></div>";
+    const inp = document.createElement("input");
+    inp.type = "range";
+    inp.min = sl.min;
+    inp.max = sl.max;
+    inp.step = sl.step;
+    inp.value = val;
+    const valEl = row.querySelector(".slider-val");
+    inp.addEventListener("input", () => {
+      const v = parseFloat(inp.value);
+      game.setDevValue(sl.key, v);
+      valEl.textContent = v.toFixed(2) + "×";
+    });
+    row.appendChild(inp);
+    return row;
+  };
+
+  UI._renderAugments = function (game, list) {
+    const s = game.state;
+    for (const a of Eco.AUGMENTS) {
+      const owned = Eco.ownsAugment(s, a.id);
+      const afford = Eco.canPay(s, a.cost);
+      const row = document.createElement("button");
+      row.className = "upg" + (owned ? " owned" : afford ? "" : " locked");
+      row.disabled = owned || !afford;
+      let costHtml;
+      if (owned) {
+        costHtml = '<span class="c-owned">OWNED</span>';
+      } else {
+        costHtml = '<span class="c-min">◈ ' + U.formatNum(a.cost.minerals || 0) + "</span>";
+        if (a.cost.crystals) costHtml += '<span class="c-cry">✦ ' + U.formatNum(a.cost.crystals) + "</span>";
+        if (a.cost.catalyst) costHtml += '<span class="c-cat">✷ ' + U.formatNum(a.cost.catalyst) + "</span>";
+      }
+      row.innerHTML =
+        '<div class="upg-main"><div class="upg-name">' + a.name + "</div>" +
+        '<div class="upg-desc">' + a.desc + "</div></div>" +
+        '<div class="upg-cost">' + costHtml + "</div>";
+      const id = a.id;
+      if (!owned) {
+        row.addEventListener("click", () => {
+          if (game.buyAugment(id)) {
+            this.refresh(game);
+            this.updateHUD(game);
+          }
+        });
+      }
       list.appendChild(row);
     }
   };
