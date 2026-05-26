@@ -113,11 +113,14 @@
 
   // Dev slider metadata (gameplay tab). Multipliers stored on G.DEV.
   Economy.DEV_SLIDERS = [
+    { key: "gameSpeed", name: "Game Speed", min: 0.25, max: 4, step: 0.25, suffix: "x" },
     { key: "shipSpeed", name: "Ship Speed", min: 0.3, max: 2.5, step: 0.05 },
     { key: "turn", name: "Turn Rate", min: 0.4, max: 2.5, step: 0.05 },
     { key: "mining", name: "Mining Power", min: 0.3, max: 4, step: 0.1 },
     { key: "botSpeed", name: "Bot Speed", min: 0.3, max: 3, step: 0.05 },
     { key: "recharge", name: "Recharge Rate", min: 0.3, max: 3, step: 0.05 },
+    { key: "pickupRange", name: "Pickup Range", min: 0.5, max: 4, step: 0.1 },
+    { key: "glide", name: "Glide / Momentum", min: 0.8, max: 0.985, step: 0.005, suffix: "" },
     { key: "glow", name: "Glow Intensity", min: 0, max: 2.5, step: 0.1 },
   ];
 
@@ -160,6 +163,15 @@
     { key: "scanlines", name: "CRT Scanlines", desc: "Horizontal scanline overlay.", kind: "visual" },
     { key: "vignette", name: "Vignette", desc: "Darken the screen edges.", kind: "visual" },
     { key: "invertTerrain", name: "Invert Terrain Shade", desc: "Flip to light rock / dark space.", kind: "visual" },
+    { key: "veinScanner", name: "Vein Scanner", desc: "Tint terrain by mineral richness so veins glow.", kind: "visual" },
+    { key: "parallaxStars", name: "Parallax Stars", desc: "Drifting parallax starfield behind the core.", kind: "visual" },
+    { key: "showFps", name: "Show FPS", desc: "Frame-time / FPS readout, top-left of the canvas.", kind: "visual" },
+    { key: "botTargets", name: "Bot Targets", desc: "Draw a line from each bot to what it's mining.", kind: "visual" },
+    { key: "veinOnly", name: "Vein-Only Mining", desc: "Regular rock yields nothing — only veins pay.", kind: "gameplay" },
+    { key: "laserHeat", name: "Laser Heat", desc: "Sustained firing overheats the laser; it cools down before firing again.", kind: "gameplay" },
+    { key: "corePulse", name: "Core Pulses", desc: "Periodic core pulses that briefly double all yield.", kind: "gameplay" },
+    { key: "shipTrail", name: "Ship Trail", desc: "The ship leaves a fading motion trail.", kind: "gameplay" },
+    { key: "screenShake", name: "Screen Shake", desc: "Subtle camera shake while mining.", kind: "gameplay" },
     { key: "infiniteEnergy", name: "Infinite Energy", desc: "Never run out of energy.", kind: "cheat" },
     { key: "magnet", name: "Ore Magnet", desc: "Deposit mined ore instantly, anywhere.", kind: "cheat" },
     { key: "autoAim", name: "Auto-Aim Laser", desc: "Laser targets the nearest rock automatically.", kind: "cheat" },

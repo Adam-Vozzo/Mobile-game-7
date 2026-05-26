@@ -125,7 +125,8 @@
         this.removedTotal += take;
         const rich = this.richness[id];
         // regular rock pays almost nothing; rich veins pay the most
-        minerals += take * w.massPerCell * (0.05 + rich * rich * 2.6);
+        const base = G.DEV.veinOnly ? 0 : 0.015;
+        minerals += take * w.massPerCell * (base + rich * rich * 2.8);
         if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
         if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
       }
@@ -201,6 +202,9 @@
     ctx.fillStyle = G.DEV.invertTerrain ? COL.rockAlt : COL.rock;
     ctx.fill(rockPath);
     ctx.restore();
+
+    // 1b) vein scanner overlay (dev): tint solid cells by richness
+    if (G.DEV.veinScanner) this._scanner(ctx, i0, i1, j0, j1, fillStep, camx, camy, scale, hw, hh);
 
     // 2) textured dots
     this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
@@ -344,6 +348,33 @@
       }
     }
     return path;
+  };
+
+  // Vein scanner (dev): fill solid cells with an alpha proportional to richness
+  // so mineral-rich veins glow, like a prospector overlay.
+  World.prototype._scanner = function (ctx, i0, i1, j0, j1, step, camx, camy, scale, hw, hh) {
+    const P = this.P,
+      d = this.density,
+      th = this.cfg.threshold;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#ffd24a";
+    for (let j = j0; j < j1; j += step) {
+      const jj = Math.min(j + step, this.NY);
+      const sy0 = hh + (this.worldY(j) - camy) * scale;
+      const syH = (this.worldY(jj) - this.worldY(j)) * scale;
+      for (let i = i0; i < i1; i += step) {
+        const ii = Math.min(i + step, this.NX);
+        if (d[j * P + i] <= th) continue;
+        const rich = this.richness[j * P + i];
+        if (rich < 0.15) continue;
+        ctx.globalAlpha = Math.min(0.6, rich * rich * 0.7);
+        const rx0 = hw + (this.worldX(i) - camx) * scale;
+        ctx.fillRect(rx0, sy0, (this.worldX(ii) - this.worldX(i)) * scale, syH);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   };
 
   // World-anchored dots (stable while panning): stars only in cleared caverns,

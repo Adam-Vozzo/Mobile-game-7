@@ -22,6 +22,9 @@
     this._hintTimer = 0;
     this.won = false;
     this.time = 0;
+    this._pulseT = 20; // seconds to next core pulse
+    this._pulseActive = 0; // seconds of pulse remaining
+    this.fps = 60;
   }
 
   Game.prototype.init = function (canvas) {
@@ -372,7 +375,7 @@
 
   Game.prototype.updatePickups = function (dt) {
     const pl = this.player;
-    const range = CFG.pickup.pullRange * this.stats.sqrtI;
+    const range = CFG.pickup.pullRange * this.stats.sqrtI * G.DEV.pickupRange;
     const r2 = range * range;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pk = this.pickups[i];
@@ -454,9 +457,28 @@
     }
   };
 
+  Game.prototype.pulseMult = function () {
+    return G.DEV.corePulse && this._pulseActive > 0 ? 2 : 1;
+  };
+
   // ---- main update ----
   Game.prototype.simulate = function (dt, frozen) {
     this.time += dt;
+    // core pulse events (dev): periodic ×2 yield windows
+    if (G.DEV.corePulse) {
+      if (this._pulseActive > 0) {
+        this._pulseActive -= dt;
+      } else {
+        this._pulseT -= dt;
+        if (this._pulseT <= 0) {
+          this._pulseActive = 8;
+          this._pulseT = 30;
+          G.UI.toast("CORE PULSE — yield ×2 for 8s", 3000);
+        }
+      }
+    } else {
+      this._pulseActive = 0;
+    }
     this.base.update(dt);
     for (const f of this.factories) f.update(dt, this);
     if (!frozen) this.player.update(dt, this.input, this.stats, this.world, this);
@@ -534,12 +556,67 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, iw, ih);
 
+    if (G.DEV.parallaxStars) this.drawParallax(ctx, iw, ih);
+
+    // screen shake (dev): jitter the world layers while mining
+    let shx = 0,
+      shy = 0;
+    if (G.DEV.screenShake && this.player.beam.active) {
+      shx = (Math.random() * 2 - 1) * 1.6;
+      shy = (Math.random() * 2 - 1) * 1.6;
+    }
+    ctx.save();
+    ctx.translate(shx, shy);
     this.world.render(ctx, this.cam, iw, ih, this.time);
     this.drawPickups(ctx, iw, ih);
     if (G.DEV.grid) this.drawGrid(ctx, iw, ih); // over terrain, under the ship
+    this.drawPulse(ctx, iw, ih);
     this.drawEntities(ctx, iw, ih);
     this.drawParticles(ctx, iw, ih);
+    ctx.restore();
+
     this.drawOverlay(ctx, iw, ih);
+  };
+
+  // Drifting parallax starfield behind the core (dev).
+  Game.prototype.drawParallax = function (ctx, iw, ih) {
+    const tile = 46;
+    const off = 0.3;
+    let ox = (-this.cam.x * this.cam.scale * off) % tile;
+    if (ox < 0) ox += tile;
+    let oy = (-this.cam.y * this.cam.scale * off) % tile;
+    if (oy < 0) oy += tile;
+    ctx.save();
+    for (let gy = -1; gy * tile - oy < ih; gy++) {
+      for (let gx = -1; gx * tile - ox < iw; gx++) {
+        const h = U.hash2(gx, gy, this.world.seed + 71);
+        if (h > 0.42) continue;
+        const sx = (gx * tile - ox + U.hash2(gx, gy, 13) * tile) | 0;
+        const sy = (gy * tile - oy + U.hash2(gx, gy, 29) * tile) | 0;
+        ctx.globalAlpha = 0.18 + 0.32 * h * 2;
+        ctx.fillStyle = h < 0.06 ? COL.bright : COL.dim;
+        ctx.fillRect(sx, sy, 1, 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  };
+
+  // Core-pulse shockwave ring (dev), expanding from base at pulse start.
+  Game.prototype.drawPulse = function (ctx, iw, ih) {
+    if (!G.DEV.corePulse || this._pulseActive <= 5.5) return;
+    const elapsed = 8 - this._pulseActive; // 0..2.5
+    const bp = this.cam.worldToScreen(this.base.x, this.base.y, iw, ih);
+    ctx.save();
+    ctx.strokeStyle = COL.bright;
+    ctx.globalAlpha = Math.max(0, 1 - elapsed / 2.5) * 0.8;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = COL.bright;
+    ctx.shadowBlur = gb(4);
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, elapsed * 220 * this.stats.sqrtI * this.cam.scale, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
   };
 
   // Fixed grid anchored in world space (the ship flies over it). Spacing
@@ -735,6 +812,25 @@
     const cam = this.cam;
     const sp = cam.worldToScreen(p.x, p.y, iw, ih);
     const r = Math.max(this.stats.playerRadius * cam.scale, 3.5);
+
+    // motion trail (dev)
+    if (G.DEV.shipTrail && p._trail.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = COL.player;
+      ctx.lineWidth = 1;
+      for (let i = 1; i < p._trail.length; i++) {
+        const a = cam.worldToScreen(p._trail[i - 1].x, p._trail[i - 1].y, iw, ih);
+        const b = cam.worldToScreen(p._trail[i].x, p._trail[i].y, iw, ih);
+        ctx.globalAlpha = (i / p._trail.length) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(sp.x, sp.y);
     ctx.rotate(p.angle);
@@ -761,6 +857,20 @@
       ctx.stroke();
     }
     ctx.restore();
+
+    // laser heat ring (dev): a red arc that fills with heat, flashes on overheat
+    if (G.DEV.laserHeat && (p.heat > 0.02 || p.overheated)) {
+      ctx.save();
+      const hot = p.overheated ? COL.danger : p.heat > 0.7 ? COL.danger : COL.bright;
+      ctx.strokeStyle = hot;
+      ctx.globalAlpha = p.overheated ? 0.6 + 0.4 * Math.sin(this.time * 12) : 0.7;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, r * 2.1, -Math.PI / 2, -Math.PI / 2 + p.heat * TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
 
     // energy bar (white vertical, to the screen-right of the ship)
     const frac = U.clamp(p.maxEnergy > 0 ? p.energy / p.maxEnergy : 0, 0, 1);
@@ -839,6 +949,21 @@
   Game.prototype.drawBot = function (ctx, b, iw, ih) {
     const sp = this.cam.worldToScreen(b.x, b.y, iw, ih);
     const r = Math.max(this.stats.playerRadius * this.cam.scale * 0.6, 2);
+    if (G.DEV.botTargets) {
+      const tx = b.mode === "return" ? b.factory.x : b.mode === "mine" ? b.mineX : b.apprX;
+      const ty = b.mode === "return" ? b.factory.y : b.mode === "mine" ? b.mineY : b.apprY;
+      const tp = this.cam.worldToScreen(tx, ty, iw, ih);
+      ctx.save();
+      ctx.strokeStyle = b.mode === "return" ? COL.crystal : COL.dim;
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(tp.x, tp.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(sp.x, sp.y);
     ctx.rotate(b.angle);
@@ -959,6 +1084,14 @@
   };
 
   Game.prototype.drawOverlay = function (d, W, H) {
+    // FPS readout (dev)
+    if (G.DEV.showFps) {
+      d.save();
+      d.font = "8px monospace";
+      d.fillStyle = COL.hudDim;
+      d.fillText(Math.round(this.fps) + " fps", 3, 9);
+      d.restore();
+    }
     // slow top->bottom light sweep
     if (G.DEV.sweep) {
       const sw = CFG.render.sweep;
@@ -1024,8 +1157,10 @@
       return;
     }
     if (dt > 0.1) dt = 0.1;
+    this.fps += (1 / dt - this.fps) * 0.1;
+    const sdt = Math.min(dt * G.DEV.gameSpeed, 0.25); // dev "Game Speed"
     this.handleInput();
-    this.simulate(dt, G.UI.open);
+    this.simulate(sdt, G.UI.open);
     this.render();
   };
 

@@ -65,8 +65,8 @@
     // ----- player ship (asteroids-style) -----
     player: {
       radius0: 6,
-      accel: 360,
-      maxSpeed: 230,
+      accel: 250,
+      maxSpeed: 160,
       turnRate: 4.4,
       drag: 0.92, // higher = more glide / momentum
       rockDrag: 0.45,
@@ -75,9 +75,9 @@
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
-      depletedSpeed: 0.16, // movement multiplier at 0 energy
+      depletedSpeed: 0.2, // movement multiplier at 0 energy (slowed 80%)
       energyLow: 0.1, // <=10% -> bar pulses red
-      cargo0: 60, // carrying capacity at influence 1 (scales with sqrtI)
+      cargo0: 700, // carrying capacity at influence 1 (scales with sqrtI)
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -139,13 +139,24 @@
   // Developer toggles + slider multipliers (experiments). Persisted; edited
   // live from Settings.
   G.DEV = {
-    // toggles
+    // visual toggles
     sweep: true,
     grid: true,
     bloom: false,
     scanlines: false,
     vignette: false,
     invertTerrain: false,
+    veinScanner: false,
+    parallaxStars: false,
+    showFps: false,
+    botTargets: false,
+    // gameplay toggles
+    veinOnly: false,
+    laserHeat: false,
+    corePulse: false,
+    shipTrail: false,
+    screenShake: false,
+    // cheat toggles
     infiniteEnergy: false,
     magnet: false,
     autoAim: false,
@@ -158,8 +169,11 @@
     botSpeed: 1,
     recharge: 1,
     glow: 1,
+    gameSpeed: 1,
+    pickupRange: 1,
+    glide: 0.92,
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b11";
+  G.BUILD = "2026-05-26 · b12";
 })(window.G);

@@ -264,31 +264,35 @@
 
     if (this.tab === "gameplay") {
       for (const sl of Eco.DEV_SLIDERS) list.appendChild(this._slider(game, sl));
-    } else {
-      const kind = this.tab === "visual" ? "visual" : "cheat";
-      for (const def of Eco.DEV_DEFS) {
-        if (def.kind !== kind) continue;
-        const on = !!G.DEV[def.key];
-        const row = document.createElement("button");
-        row.className = "toggle" + (on ? " on" : "");
-        row.innerHTML =
-          '<div class="upg-main"><div class="upg-name">' + def.name + "</div>" +
-          '<div class="upg-desc">' + def.desc + "</div></div>" +
-          '<div class="tgl">' + (on ? "ON" : "OFF") + "</div>";
-        row.addEventListener("click", () => {
-          game.toggleDev(def.key);
-          this.refresh(game);
-        });
-        list.appendChild(row);
-      }
+    }
+    const kind = this.tab === "gameplay" ? "gameplay" : this.tab === "visual" ? "visual" : "cheat";
+    for (const def of Eco.DEV_DEFS) {
+      if (def.kind !== kind) continue;
+      list.appendChild(this._toggleRow(game, def));
     }
   };
 
+  UI._toggleRow = function (game, def) {
+    const on = !!G.DEV[def.key];
+    const row = document.createElement("button");
+    row.className = "toggle" + (on ? " on" : "");
+    row.innerHTML =
+      '<div class="upg-main"><div class="upg-name">' + def.name + "</div>" +
+      '<div class="upg-desc">' + def.desc + "</div></div>" +
+      '<div class="tgl">' + (on ? "ON" : "OFF") + "</div>";
+    row.addEventListener("click", () => {
+      game.toggleDev(def.key);
+      this.refresh(game);
+    });
+    return row;
+  };
+
   UI._slider = function (game, sl) {
+    const sfx = sl.suffix != null ? sl.suffix : "×";
     const val = G.DEV[sl.key];
     const row = document.createElement("div");
     row.className = "slider";
-    row.innerHTML = '<div class="slider-top"><span class="slider-name">' + sl.name + '</span><span class="slider-val">' + val.toFixed(2) + "×</span></div>";
+    row.innerHTML = '<div class="slider-top"><span class="slider-name">' + sl.name + '</span><span class="slider-val">' + val.toFixed(2) + sfx + "</span></div>";
     const inp = document.createElement("input");
     inp.type = "range";
     inp.min = sl.min;
@@ -299,7 +303,7 @@
     inp.addEventListener("input", () => {
       const v = parseFloat(inp.value);
       game.setDevValue(sl.key, v);
-      valEl.textContent = v.toFixed(2) + "×";
+      valEl.textContent = v.toFixed(2) + sfx;
     });
     row.appendChild(inp);
     return row;

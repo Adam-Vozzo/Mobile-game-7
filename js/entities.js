@@ -27,6 +27,9 @@
     this._lastMine = { x: 0, y: 0 };
     this.cargoLoad = 0;
     this.maxCargo = 1;
+    this._trail = [];
+    this.heat = 0;
+    this.overheated = false;
   }
 
   // Free capacity, counting ore already credited + in flight + pending.
@@ -91,7 +94,7 @@
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
-    let keep = Math.pow(P.drag, dt * 60);
+    let keep = Math.pow(DEV.glide, dt * 60);
     if (dens > T) keep *= Math.pow(0.5, dt * 60);
     this.vx *= keep;
     this.vy *= keep;
@@ -116,8 +119,10 @@
     }
 
     // --- mining laser (forward, or auto-aim to nearest rock) ---
+    const pm = game.pulseMult ? game.pulseMult() : 1;
+    const laserBlocked = depleted || (DEV.laserHeat && this.overheated);
     let firing = false;
-    if (!depleted) {
+    if (!laserBlocked) {
       const range = stats.laserRange;
       const step = CFG.laser.step;
       let sx, sy, hit = false, hx = 0, hy = 0;
@@ -163,9 +168,9 @@
         this.beam.x2 = hx;
         this.beam.y2 = hy;
         const got = world.carve(hx, hy, stats.carveR, stats.laserPower * dt);
-        const gm = got.minerals * stats.yield,
-          gc = got.crystals * stats.yield,
-          gk = got.catalyst * stats.yield;
+        const gm = got.minerals * stats.yield * pm,
+          gc = got.crystals * stats.yield * pm,
+          gk = got.catalyst * stats.yield * pm;
         const tot = gm + gc + gk;
         if (tot > 0) {
           this._lastMine.x = hx;
@@ -185,6 +190,21 @@
       }
     } else {
       this.beam.active = false;
+    }
+
+    // laser heat (overheat experiment)
+    if (DEV.laserHeat) {
+      this.heat += (firing ? 0.5 : -0.62) * dt;
+      if (this.heat < 0) this.heat = 0;
+      if (this.heat >= 1) {
+        this.heat = 1;
+        this.overheated = true;
+      } else if (this.overheated && this.heat <= 0.4) {
+        this.overheated = false;
+      }
+    } else {
+      this.heat = 0;
+      this.overheated = false;
     }
 
     // flush mined ore toward the ship as a bundled mote (credited on arrival)
@@ -227,6 +247,10 @@
       if (firing) this.energy -= P.energyLaser * dt;
       if (this.energy < 0) this.energy = 0;
     }
+
+    // motion trail (drawn only when the toggle is on)
+    this._trail.push({ x: this.x, y: this.y });
+    if (this._trail.length > 22) this._trail.shift();
   };
 
   // ---------------- Bot (chips rock from the reachable edge) ----------------
@@ -350,9 +374,10 @@
     } else if (this.mode === "mine") {
       this.beam = true;
       const got = world.carve(this.mineX, this.mineY, bstats.botCarveR, bstats.botPower * dt);
-      this.carry.m += got.minerals * yieldMult;
-      this.carry.c += got.crystals * yieldMult;
-      this.carry.k += got.catalyst * yieldMult;
+      const pm = game.pulseMult ? game.pulseMult() : 1;
+      this.carry.m += got.minerals * yieldMult * pm;
+      this.carry.c += got.crystals * yieldMult * pm;
+      this.carry.k += got.catalyst * yieldMult * pm;
       game.spawnSpark(this.mineX, this.mineY);
       game.spawnBotCollect(this.mineX, this.mineY, this);
       // sit just outside the face and follow it inward as it recedes
