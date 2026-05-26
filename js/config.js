@@ -66,7 +66,7 @@
     player: {
       radius0: 6,
       accel: 250,
-      maxSpeed: 160,
+      maxSpeed: 180,
       turnRate: 4.4,
       drag: 0.92, // higher = more glide / momentum
       rockDrag: 0.45,
@@ -77,7 +77,7 @@
       energyRecharge: 40, // /s inside base range
       depletedSpeed: 0.2, // movement multiplier at 0 energy (slowed 80%)
       energyLow: 0.1, // <=10% -> bar pulses red
-      cargo0: 700, // carrying capacity at influence 1 (scales with sqrtI)
+      cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -178,5 +178,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b16";
+  G.BUILD = "2026-05-26 · b17";
 })(window.G);
