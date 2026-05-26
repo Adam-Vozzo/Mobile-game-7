@@ -279,7 +279,7 @@
   Bot.prototype._seek = function (world, bstats) {
     this.retarget = CFG.bot.retargetTime;
     const rays = CFG.bot.reachRays;
-    const len = CFG.bot.reachLen * bstats.sqrtI;
+    const len = bstats.botReach;
     const stepw = world.cell * Math.max(1, bstats.sqrtI);
     const R2 = world.radius * world.radius;
     let best = null,
@@ -361,7 +361,7 @@
   Bot.prototype.update = function (dt, bstats, yieldMult, world, game) {
     const home = this.factory;
     const cap = bstats.botCapacity;
-    const maxTunnel = CFG.bot.reachLen * bstats.sqrtI * 1.4;
+    const maxTunnel = bstats.botReach * 1.4;
     if (this.mode === "seek") {
       this.retarget -= dt;
       if (!this.hasTarget || this.retarget <= 0) this._seek(world, bstats);

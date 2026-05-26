@@ -85,7 +85,7 @@
     if (data.factories) {
       for (const f of data.factories) {
         const fac = new G.Factory(f.x, f.y, f.seed >>> 0);
-        if (f.levels) fac.levels = f.levels;
+        fac.levels = Object.assign(Eco.factoryDefaultLevels(), f.levels || {});
         fac.recompute(this.stats.influence);
         const n = Math.min(f.bots || 0, Math.floor(fac.botStats.botBay));
         for (let i = 0; i < n; i++) fac.bots.push(new G.Bot(fac.x, fac.y, fac, (fac.seed + i * 7919) >>> 0));
@@ -134,13 +134,17 @@
       this.state.levels.factory++;
       this.spawnFactory(this.player.x, this.player.y);
     } else {
+      if ((this.state.levels[id] || 0) >= Eco.maxLevel(id)) return false; // capped (e.g. Ship Class)
       const cost = Eco.cost(id, this.state.levels[id]);
       if (!Eco.canPay(this.state, cost)) return false;
       Eco.pay(this.state, cost);
       this.state.levels[id]++;
     }
     this.recomputeStats();
-    if (id === "influence") G.UI.toast("Influence grown to ◎" + U.formatNum(this.stats.influence), 2500);
+    if (id === "influence") {
+      const cls = ["I", "II", "III", "IV", "V"][Math.min(this.state.levels.influence, 4)];
+      G.UI.toast("Refit complete — Ship Class " + cls + " (scale ◎" + U.formatNum(this.stats.influence) + ")", 2800);
+    }
     G.UI.updateHUD(this);
     return true;
   };

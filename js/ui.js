@@ -166,7 +166,7 @@
 
     if (this.panel === "base") {
       this.renderTabs([{ id: "upgrades", name: "Upgrades" }, { id: "augments", name: "Augments" }], game);
-      this.el.sub.textContent = "Influence ◎" + U.formatNum(game.stats.influence) + "  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
+      this.el.sub.textContent = "Ship Class " + ["I", "II", "III", "IV", "V"][Math.min(s.levels.influence, 4)] + " (◎" + U.formatNum(game.stats.influence) + ")  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
       if (this.tab === "augments") {
         this._renderAugments(game, list);
         return;
@@ -187,23 +187,30 @@
       this.el.sub.textContent = "This factory · " + this.building.bots.length + "/" + Math.floor(bs.botBay) + " bots";
     }
 
+    const ROMAN = ["I", "II", "III", "IV", "V"];
     const defs = Eco.UPGRADES[this.panel];
     for (const def of defs) {
       const lvl = isFactory ? this.building.levels[def.id] || 0 : s.levels[def.id] || 0;
+      const maxed = def.max != null && lvl >= def.max;
       const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : lvl);
-      const afford = Eco.canPay(s, cost);
+      const afford = !maxed && Eco.canPay(s, cost);
 
       const row = document.createElement("button");
       row.className = "upg" + (afford ? "" : " locked");
-      row.disabled = !afford;
+      row.disabled = maxed || !afford;
 
       let levelLabel = "Lv " + lvl;
       if (def.id === "factory") levelLabel = "Built " + s.levels.factory;
-      if (def.id === "influence") levelLabel = "◎" + U.formatNum(game.stats.influence);
+      if (def.id === "influence") levelLabel = "Class " + ROMAN[Math.min(lvl, 4)] + " · ◎" + U.formatNum(game.stats.influence);
 
-      let costHtml = '<span class="c-min">◈ ' + U.formatNum(cost.minerals) + "</span>";
-      if (cost.crystals > 0) costHtml += '<span class="c-cry">✦ ' + U.formatNum(cost.crystals) + "</span>";
-      if (cost.catalyst > 0) costHtml += '<span class="c-cat">✷ ' + U.formatNum(cost.catalyst) + "</span>";
+      let costHtml;
+      if (maxed) {
+        costHtml = '<span class="c-owned">MAX</span>';
+      } else {
+        costHtml = cost.minerals > 0 ? '<span class="c-min">◈ ' + U.formatNum(cost.minerals) + "</span>" : "";
+        if (cost.crystals > 0) costHtml += '<span class="c-cry">✦ ' + U.formatNum(cost.crystals) + "</span>";
+        if (cost.catalyst > 0) costHtml += '<span class="c-cat">✷ ' + U.formatNum(cost.catalyst) + "</span>";
+      }
 
       row.innerHTML =
         '<div class="upg-main"><div class="upg-name">' +

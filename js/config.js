@@ -119,11 +119,12 @@
       laserEff: { minerals: 30, growth: 1.62 },
       cargo: { minerals: 28, growth: 1.5 },
       baseRange: { minerals: 35, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
-      influence: { minerals: 60, crystals: 4, catalyst: 1, growth: 1.85, crystalGrowth: 1.7, catalystGrowth: 1.55 },
+      // Ship Class: capped at 4, paid in rare Catalyst (+ crystals)
+      influence: { crystals: 30, catalyst: 5, growth: 2.0, crystalGrowth: 2.0, catalystGrowth: 2.0 },
       factory: { minerals: 120, crystals: 2, growth: 2.0, crystalGrowth: 1.6 },
       // per-factory bot upgrades
       botBay: { minerals: 90, crystals: 3, growth: 1.9, crystalGrowth: 1.7 },
-      botSpeed: { minerals: 40, growth: 1.5 },
+      botRange: { minerals: 40, growth: 1.5 },
       botPower: { minerals: 45, growth: 1.55 },
       botCapacity: { minerals: 50, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
     },
@@ -177,5 +178,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b14";
+  G.BUILD = "2026-05-26 · b15";
 })(window.G);

@@ -27,11 +27,21 @@
   };
 
   Economy.factoryDefaultLevels = function () {
-    return { botBay: 0, botSpeed: 0, botPower: 0, botCapacity: 0 };
+    return { botBay: 0, botRange: 0, botPower: 0, botCapacity: 0 };
   };
 
+  // Ship Class scale: capped at 4 upgrades, scale 1.0 -> 4.0.
   Economy.influenceValue = function (level) {
-    return Math.pow(1.3, level);
+    return 1 + 0.75 * Math.min(level, 4);
+  };
+
+  // Highest purchasable level for an upgrade id (Infinity if uncapped).
+  Economy.maxLevel = function (id) {
+    for (const panel in Economy.UPGRADES) {
+      const d = Economy.UPGRADES[panel].find((u) => u.id === id);
+      if (d && d.max != null) return d.max;
+    }
+    return Infinity;
   };
 
   // Global stats: player, laser, influence, base, energy.
@@ -65,7 +75,8 @@
     const sI = Math.sqrt(I);
     const inf = CFG.influence;
     return {
-      botSpeed: CFG.bot.speed0 * (1 + 0.4 * levels.botSpeed) * sI * G.DEV.botSpeed,
+      botSpeed: CFG.bot.speed0 * sI * G.DEV.botSpeed,
+      botReach: CFG.bot.reachLen * (1 + 0.5 * (levels.botRange || 0)) * sI,
       botCarveR: CFG.bot.carveR0 * Math.pow(I, inf.carveExp * 0.85),
       botPower: CFG.bot.power0 * (1 + 0.5 * levels.botPower),
       botCapacity: CFG.bot.capacity0 * (1 + 0.6 * levels.botCapacity) * sI,
@@ -93,7 +104,7 @@
     state.catalyst -= cost.catalyst || 0;
   };
 
-  Economy.FACTORY_UPGRADES = ["botBay", "botSpeed", "botPower", "botCapacity"];
+  Economy.FACTORY_UPGRADES = ["botBay", "botRange", "botPower", "botCapacity"];
 
   // One-time, non-scaling augments (bought once, fixed cost).
   Economy.AUGMENTS = [
@@ -131,12 +142,12 @@
       { id: "laserEff", name: "Refinement", desc: "Extract more minerals per carve." },
       { id: "cargo", name: "Cargo Hold", desc: "Carry more ore before you must return to deposit it." },
       { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field and raise your energy capacity." },
-      { id: "influence", name: "Influence", desc: "Grow your scale. Mine larger regions; the core shrinks around you. Needs Catalyst." },
+      { id: "influence", name: "Ship Class", desc: "Refit your hull to a higher class — up to Class V. Scales you up and extends your reach. Forged from rare Catalyst.", max: 4 },
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
     ],
     factory: [
       { id: "botBay", name: "Expand Bay", desc: "House more bots at this factory." },
-      { id: "botSpeed", name: "Bot Thrusters", desc: "Bots at this factory travel faster." },
+      { id: "botRange", name: "Bot Travel Range", desc: "Bots at this factory roam farther to find and mine rock." },
       { id: "botPower", name: "Bot Drills", desc: "Bots at this factory carve faster." },
       { id: "botCapacity", name: "Bot Hoppers", desc: "Bots at this factory carry more before returning." },
     ],
@@ -149,7 +160,7 @@
     { glyph: "✷", cls: "c-cat", name: "Catalyst", desc: "Rare shiny material from special veins. Required to grow Influence." },
     { glyph: "▴", cls: "c-bot", name: "Bots", desc: "Active mining bots / total bay capacity across all factories." },
     { glyph: "⬡", cls: "c-fac", name: "Factories", desc: "Deployed factories. Each assembles and upgrades its own bots." },
-    { glyph: "◎", cls: "c-inf", name: "Influence", desc: "Your scale. Higher influence zooms the view out and extends your reach." },
+    { glyph: "◎", cls: "c-inf", name: "Ship Class", desc: "Your hull class (max IV). Higher class scales you up and extends your reach." },
     { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated. Reach ~90% to Ascend." },
     { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at a base (fast) or factory (slow)." },
     { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to a base or factory to deposit it." },
