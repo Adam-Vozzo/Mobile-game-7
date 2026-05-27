@@ -352,25 +352,28 @@
 
   // Vein scanner (dev): fill solid cells with an alpha proportional to richness
   // so mineral-rich veins glow, like a prospector overlay.
+  // Vein scanner (dev): a soft glowing dot at each rich solid cell (no blocky
+  // rect edges). Brighter for richer / crystal / catalyst.
   World.prototype._scanner = function (ctx, i0, i1, j0, j1, step, camx, camy, scale, hw, hh) {
     const P = this.P,
       d = this.density,
       th = this.cfg.threshold;
+    const COL = G.CFG.COL;
     ctx.save();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = "#ffd24a";
     for (let j = j0; j < j1; j += step) {
-      const jj = Math.min(j + step, this.NY);
-      const sy0 = hh + (this.worldY(j) - camy) * scale;
-      const syH = (this.worldY(jj) - this.worldY(j)) * scale;
+      const sy = hh + (this.worldY(j) - camy) * scale;
       for (let i = i0; i < i1; i += step) {
-        const ii = Math.min(i + step, this.NX);
-        if (d[j * P + i] <= th) continue;
-        const rich = this.richness[j * P + i];
-        if (rich < 0.15) continue;
-        ctx.globalAlpha = Math.min(0.6, rich * rich * 0.7);
-        const rx0 = hw + (this.worldX(i) - camx) * scale;
-        ctx.fillRect(rx0, sy0, (this.worldX(ii) - this.worldX(i)) * scale, syH);
+        const id = j * P + i;
+        if (d[id] <= th) continue;
+        const rich = this.richness[id];
+        if (rich < 0.35 && !this.crystal[id] && !this.special[id]) continue;
+        const sx = hw + (this.worldX(i) - camx) * scale;
+        ctx.fillStyle = this.special[id] ? COL.catalystDot : this.crystal[id] ? COL.crystalDot : COL.mineralDot;
+        ctx.globalAlpha = Math.min(0.85, 0.25 + rich * rich * 0.8);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1.6, 0, U.TAU);
+        ctx.fill();
       }
     }
     ctx.globalAlpha = 1;

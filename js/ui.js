@@ -33,6 +33,7 @@
       settings: document.getElementById("btn-settings"),
       build: document.getElementById("btn-build"),
       hud: document.getElementById("hud"),
+      fps: document.getElementById("fps"),
     };
     const self = this;
     this.el.close.addEventListener("click", () => self.close());
@@ -69,9 +70,9 @@
     this.open = true;
     this.panel = panel;
     this.building = building;
-    this.tab = panel === "base" ? "upgrades" : null;
+    this.tab = panel === "base" ? "ship" : null;
     this.el.modal.classList.add("show");
-    this.el.title.textContent = panel === "base" ? "COMMAND BASE" : "FACTORY";
+    this.el.title.textContent = panel === "base" ? "COMMAND BASE" : panel === "shipyard" ? "SHIPYARD" : "FACTORY";
     this.refresh(game);
   };
 
@@ -163,36 +164,32 @@
 
     const s = game.state;
     const isFactory = this.panel === "factory";
+    const ROMAN = ["I", "II", "III", "IV", "V"];
 
+    if (this.panel === "shipyard") {
+      this.renderTabs(null);
+      this.el.sub.textContent = "Research & install ship augments";
+      this._renderAugments(game, list);
+      return;
+    }
+
+    let defsKey;
     if (this.panel === "base") {
-      this.renderTabs([{ id: "upgrades", name: "Upgrades" }, { id: "augments", name: "Augments" }], game);
-      this.el.sub.textContent = "Ship Class " + ["I", "II", "III", "IV", "V"][Math.min(s.levels.influence, 4)] + " (◎" + U.formatNum(game.stats.influence) + ")  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
-      if (this.tab === "augments") {
-        this._renderAugments(game, list);
-        return;
-      }
-      if (game.world.carvedFraction() >= 0.9) {
-        const asc = document.createElement("button");
-        asc.className = "upg ascend";
-        asc.innerHTML =
-          '<div class="upg-main"><div class="upg-name">ASCEND <span class="upg-lvl">x' +
-          (s.ascends || 0) +
-          '</span></div><div class="upg-desc">Assimilate this core. Reset progress for a permanent +50% yield and a fresh, richer core.</div></div><div class="upg-cost"><span class="c-cat">✷</span></div>';
-        asc.addEventListener("click", () => game.ascend());
-        list.appendChild(asc);
-      }
+      this.renderTabs([{ id: "ship", name: "Ship" }, { id: "structures", name: "Structures" }], game);
+      this.el.sub.textContent = "Ship Class " + ROMAN[Math.min(s.levels.influence, 4)] + " (◎" + U.formatNum(game.stats.influence) + ")  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
+      defsKey = this.tab === "structures" ? "structures" : "ship";
     } else {
       this.renderTabs(null);
       const bs = this.building.botStats;
       this.el.sub.textContent = "This factory · " + this.building.bots.length + "/" + Math.floor(bs.botBay) + " bots";
+      defsKey = "factory";
     }
 
-    const ROMAN = ["I", "II", "III", "IV", "V"];
-    const defs = Eco.UPGRADES[this.panel];
+    const defs = Eco.UPGRADES[defsKey];
     for (const def of defs) {
       const lvl = isFactory ? this.building.levels[def.id] || 0 : s.levels[def.id] || 0;
       const maxed = def.max != null && lvl >= def.max;
-      const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : lvl);
+      const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : def.id === "shipyard" ? 0 : lvl);
       const afford = !maxed && Eco.canPay(s, cost);
 
       const row = document.createElement("button");
@@ -201,11 +198,12 @@
 
       let levelLabel = "Lv " + lvl;
       if (def.id === "factory") levelLabel = "Built " + s.levels.factory;
+      if (def.id === "shipyard") levelLabel = s.levels.shipyard ? "Built" : "";
       if (def.id === "influence") levelLabel = "Class " + ROMAN[Math.min(lvl, 4)] + " · ◎" + U.formatNum(game.stats.influence);
 
       let costHtml;
       if (maxed) {
-        costHtml = '<span class="c-owned">MAX</span>';
+        costHtml = '<span class="c-owned">' + (def.id === "shipyard" ? "BUILT" : "MAX") + "</span>";
       } else {
         costHtml = cost.minerals > 0 ? '<span class="c-min">◈ ' + U.formatNum(cost.minerals) + "</span>" : "";
         if (cost.crystals > 0) costHtml += '<span class="c-cry">✦ ' + U.formatNum(cost.crystals) + "</span>";
@@ -319,10 +317,21 @@
   UI._renderAugments = function (game, list) {
     const s = game.state;
     for (const a of Eco.AUGMENTS) {
+      const row = document.createElement("button");
+      // undiscovered special augments: show that they exist, not what they are
+      if (!Eco.augmentUnlocked(s, a)) {
+        row.className = "upg locked";
+        row.disabled = true;
+        row.innerHTML =
+          '<div class="upg-main"><div class="upg-name">??? <span class="upg-lvl">Undiscovered</span></div>' +
+          '<div class="upg-desc">A salvaged ship holds the schematics for this augment.</div></div>' +
+          '<div class="upg-cost"><span class="c-cat">✷ ?</span></div>';
+        list.appendChild(row);
+        continue;
+      }
       const owned = Eco.ownsAugment(s, a.id);
       const afford = Eco.canPay(s, a.cost);
-      const row = document.createElement("button");
-      row.className = "upg" + (owned ? " owned" : afford ? "" : " locked");
+      row.className = "upg" + (owned ? " owned" : afford ? "" : " locked") + (a.special ? " ascend" : "");
       row.disabled = owned || !afford;
       let costHtml;
       if (owned) {
@@ -333,7 +342,7 @@
         if (a.cost.catalyst) costHtml += '<span class="c-cat">✷ ' + U.formatNum(a.cost.catalyst) + "</span>";
       }
       row.innerHTML =
-        '<div class="upg-main"><div class="upg-name">' + a.name + "</div>" +
+        '<div class="upg-main"><div class="upg-name">' + a.name + (a.special ? ' <span class="upg-lvl">salvaged</span>' : "") + "</div>" +
         '<div class="upg-desc">' + a.desc + "</div></div>" +
         '<div class="upg-cost">' + costHtml + "</div>";
       const id = a.id;

@@ -169,6 +169,17 @@ body {
   opacity: 0.5;
   pointer-events: none;
 }
+#fps {
+  position: fixed;
+  left: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  display: none;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--bright);
+  pointer-events: none;
+  text-shadow: 0 0 4px rgba(255, 130, 0, 0.5);
+}
 
 #prompt {
   position: fixed;

@@ -12,6 +12,8 @@
     this.state = Eco.defaultState();
     this.stats = Eco.derive(this.state);
     this.factories = [];
+    this.shipyard = null;
+    this.wrecks = [];
     this.particles = [];
     this.pickups = [];
     this.cable = new G.Rope(16);
@@ -60,9 +62,32 @@
     this.base = new G.Base();
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.shipyard = null;
+    this.genWrecks();
     this.recomputeStats();
     this.player.energy = this.stats.energyMax;
-    G.UI.toast("Steer with the left side. Aim the laser at rock. Stay near BASE to recharge & upgrade.", 6500);
+    G.UI.toast("Steer with the left side. Mine glowing veins. Stay near BASE to recharge & upgrade.", 6500);
+  };
+
+  // Deterministic wreck placement from the world seed (buried in rock).
+  Game.prototype.genWrecks = function (salvagedFlags) {
+    this.wrecks = [];
+    const w = this.world,
+      rng = U.mulberry32((w.seed ^ 0x9e3779b9) >>> 0);
+    const R = w.radius;
+    let i = 0;
+    let guard = 0;
+    while (i < CFG.wreck.count && guard++ < 4000) {
+      const a = rng() * U.TAU;
+      const r = (0.12 + 0.8 * Math.sqrt(rng())) * R; // spread across the disc, not too central
+      const x = Math.cos(a) * r,
+        y = Math.sin(a) * r;
+      if (w.densityAt(x, y) < w.cfg.threshold) continue; // want it buried in rock
+      const wr = new G.Wreck(x, y, i % G.Economy.SPECIAL_AUGMENTS.length);
+      if (salvagedFlags && salvagedFlags[i]) wr.salvaged = true;
+      this.wrecks.push(wr);
+      i++;
+    }
   };
 
   Game.prototype.loadFrom = function (data) {
@@ -73,6 +98,7 @@
     if (this.state.yieldMult == null) this.state.yieldMult = 1;
     if (this.state.ascends == null) this.state.ascends = 0;
     if (this.state.augments == null) this.state.augments = {};
+    if (this.state.unlocked == null) this.state.unlocked = {};
     for (const k in def.levels) if (this.state.levels[k] == null) this.state.levels[k] = 0;
     this.world = new G.World(data.seed >>> 0);
     if (data.density) G.Save.applyDensity(this.world, data.density);
@@ -92,6 +118,8 @@
         this.factories.push(fac);
       }
     }
+    this.shipyard = data.shipyard ? new G.Shipyard(data.shipyard.x, data.shipyard.y) : null;
+    this.genWrecks(data.wrecksSalvaged);
     this.player.energy = data.energy != null ? data.energy : this.stats.energyMax;
     if (data.cargo) this.player.cargo = data.cargo;
     this.botIncomeEMA = data.botIncome || 0;
@@ -133,6 +161,15 @@
       Eco.pay(this.state, cost);
       this.state.levels.factory++;
       this.spawnFactory(this.player.x, this.player.y);
+    } else if (id === "shipyard") {
+      if (this.shipyard) return false; // build once
+      const cost = Eco.cost("shipyard", 0);
+      if (!Eco.canPay(this.state, cost)) return false;
+      Eco.pay(this.state, cost);
+      this.state.levels.shipyard = 1;
+      this.world.clearCircle(this.player.x, this.player.y, 22 * this.stats.sqrtI);
+      this.shipyard = new G.Shipyard(this.player.x, this.player.y);
+      G.UI.toast("Shipyard built. Tap it to research ship augments.", 3200);
     } else {
       if ((this.state.levels[id] || 0) >= Eco.maxLevel(id)) return false; // capped (e.g. Ship Class)
       const cost = Eco.cost(id, this.state.levels[id]);
@@ -152,13 +189,30 @@
   Game.prototype.buyAugment = function (id) {
     if (Eco.ownsAugment(this.state, id)) return false;
     const def = Eco.augmentDef(id);
-    if (!def || !Eco.canPay(this.state, def.cost)) return false;
+    if (!def || !Eco.augmentUnlocked(this.state, def)) return false; // special must be salvaged first
+    if (!Eco.canPay(this.state, def.cost)) return false;
     Eco.pay(this.state, def.cost);
     this.state.augments[id] = true;
     this.recomputeStats();
     G.UI.updateHUD(this);
     G.UI.toast("Augment installed: " + def.name, 2600);
     return true;
+  };
+
+  // Salvage a wreck that's been dug free -> unlock its special augment.
+  Game.prototype.salvageWreck = function (wr) {
+    if (wr.salvaged) return;
+    wr.salvaged = true;
+    const r = CFG.wreck.reward;
+    this.addResources(r.minerals, r.crystals, r.catalyst, false);
+    const augId = G.Economy.SPECIAL_AUGMENTS[wr.type];
+    const def = G.Economy.augmentDef(augId);
+    const first = !this.state.unlocked[augId];
+    this.state.unlocked[augId] = true;
+    for (let i = 0; i < 14; i++) this.spawnDeposit(wr.x, wr.y);
+    G.UI.updateHUD(this);
+    if (first) G.UI.toast("Wreck salvaged! Unlocked augment: " + def.name + " — research it at the Shipyard.", 5000);
+    else G.UI.toast("Wreck salvaged — bonus resources recovered.", 3000);
   };
 
   // Nearest unmined Catalyst vein to a point (cell scan, capped). For the
@@ -208,6 +262,8 @@
     this.world = new G.World((Math.random() * 1e9) >>> 0);
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.shipyard = null;
+    this.genWrecks();
     this.particles = [];
     this.pickups = [];
     this.cable.active = false;
@@ -227,6 +283,8 @@
     this.base = new G.Base();
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.shipyard = null;
+    this.genWrecks();
     this.particles = [];
     this.pickups = [];
     this.cable.active = false;
@@ -255,8 +313,13 @@
 
   // Build menu (base) — works anywhere as long as you're within base range.
   Game.prototype.openBuild = function () {
-    if (this.player.nearBase) G.UI.openPanel("base", this.base, this);
-    else G.UI.toast("Return to base range to build & upgrade.", 2200);
+    if (this.player.nearBase) {
+      G.UI.openPanel("base", this.base, this);
+      G.UI.tab = "structures";
+      G.UI.refresh(this);
+    } else {
+      G.UI.toast("Return to base range to build & upgrade.", 2200);
+    }
   };
 
   // ---- particles ----
@@ -379,8 +442,9 @@
 
   Game.prototype.updatePickups = function (dt) {
     const pl = this.player;
+    const siphon = this.state.augments && this.state.augments.siphon;
     const range = CFG.pickup.pullRange * this.stats.sqrtI * G.DEV.pickupRange;
-    const r2 = range * range;
+    const r2 = siphon ? Infinity : range * range;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pk = this.pickups[i];
       const tot = pk.m + pk.c + pk.k;
@@ -410,10 +474,15 @@
 
   // ---- interaction ----
   Game.prototype.buildings = function () {
-    return [this.base].concat(this.factories);
+    const b = [this.base].concat(this.factories);
+    if (this.shipyard) b.push(this.shipyard);
+    return b;
   };
   Game.prototype.interactRadius = function (b) {
     return b.panel === "base" ? this.stats.baseRange : CFG.interactRange * this.stats.sqrtI;
+  };
+  Game.prototype.wreckExposed = function (wr) {
+    return !wr.salvaged && this.world.densityAt(wr.x, wr.y) <= this.world.cfg.threshold;
   };
   Game.prototype._nearestBuilding = function (x, y) {
     let best = null,
@@ -427,21 +496,53 @@
     }
     return best;
   };
+  Game.prototype._nearestWreck = function (x, y) {
+    const rng = CFG.wreck.salvageRange * this.stats.sqrtI;
+    let best = null,
+      bd = rng;
+    for (const wr of this.wrecks) {
+      if (!this.wreckExposed(wr)) continue;
+      const d = U.dist(x, y, wr.x, wr.y);
+      if (d <= bd) {
+        bd = d;
+        best = wr;
+      }
+    }
+    return best;
+  };
 
   Game.prototype.handleInput = function () {
     if (this.input.consumeInteract()) {
+      const wr = this._nearestWreck(this.player.x, this.player.y);
       const near = this._nearestBuilding(this.player.x, this.player.y);
-      if (near) {
+      if (wr) this.salvageWreck(wr);
+      else if (near) {
         if (G.UI.open && G.UI.building === near) G.UI.close();
         else G.UI.openPanel(near.panel, near, this);
       } else {
-        G.UI.toast("Move within range of a base or factory to access its controls.", 2200);
+        G.UI.toast("Move within range of a structure to access its controls.", 2200);
       }
     }
     const taps = this.input.consumeTaps();
+    const PANEL_NAME = { base: "base", factory: "factory", shipyard: "shipyard" };
     for (const tap of taps) {
       const ix = (tap.x / this.cssW) * this.iw;
       const iy = (tap.y / this.cssH) * this.ih;
+      // tap an exposed wreck to salvage
+      let wreck = null;
+      for (const wr of this.wrecks) {
+        if (!this.wreckExposed(wr)) continue;
+        const sp = this.cam.worldToScreen(wr.x, wr.y, this.iw, this.ih);
+        if (U.dist(ix, iy, sp.x, sp.y) < 16) {
+          wreck = wr;
+          break;
+        }
+      }
+      if (wreck) {
+        if (U.dist(this.player.x, this.player.y, wreck.x, wreck.y) <= CFG.wreck.salvageRange * this.stats.sqrtI) this.salvageWreck(wreck);
+        else G.UI.toast("Move closer to salvage the wreck.", 2200);
+        continue;
+      }
       let hit = null;
       for (const b of this.buildings()) {
         const sp = this.cam.worldToScreen(b.x, b.y, this.iw, this.ih);
@@ -455,7 +556,7 @@
         if (U.dist(this.player.x, this.player.y, hit.x, hit.y) <= this.interactRadius(hit)) {
           G.UI.openPanel(hit.panel, hit, this);
         } else {
-          G.UI.toast("Move closer to the " + (hit.panel === "base" ? "base" : "factory") + " to access controls.", 2200);
+          G.UI.toast("Move closer to the " + (PANEL_NAME[hit.panel] || "structure") + " to access controls.", 2200);
         }
       }
     }
@@ -523,8 +624,10 @@
     }
 
     if (!frozen) {
+      const wr = this._nearestWreck(this.player.x, this.player.y);
       const near = this._nearestBuilding(this.player.x, this.player.y);
-      G.UI.setPrompt(near ? (near.panel === "base" ? "Tap base · or press E" : "Tap factory · or press E") : null);
+      const L = { base: "Tap base · or press E", factory: "Tap factory · or press E", shipyard: "Tap shipyard · or press E" };
+      G.UI.setPrompt(wr ? "Tap to salvage wreck · or press E" : near ? L[near.panel] : null);
     } else {
       G.UI.setPrompt(null);
     }
@@ -560,8 +663,6 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, iw, ih);
 
-    if (G.DEV.parallaxStars) this.drawParallax(ctx, iw, ih);
-
     // screen shake (dev): jitter the world layers while mining
     let shx = 0,
       shy = 0;
@@ -572,6 +673,8 @@
     ctx.save();
     ctx.translate(shx, shy);
     this.world.render(ctx, this.cam, iw, ih, this.time);
+    if (G.DEV.parallaxStars) this.drawParallax(ctx, iw, ih); // over terrain so it's visible
+    this.drawWrecks(ctx, iw, ih);
     this.drawPickups(ctx, iw, ih);
     if (G.DEV.grid) this.drawGrid(ctx, iw, ih); // over terrain, under the ship
     this.drawPulse(ctx, iw, ih);
@@ -583,9 +686,10 @@
     if (G.DEV.depthHaze) {
       const cc = this.cam.worldToScreen(0, 0, iw, ih);
       const rad = Math.max(8, this.world.radius * this.cam.scale);
-      const grd = ctx.createRadialGradient(cc.x, cc.y, rad * 0.12, cc.x, cc.y, rad);
+      const grd = ctx.createRadialGradient(cc.x, cc.y, rad * 0.08, cc.x, cc.y, rad);
       grd.addColorStop(0, "rgba(0,0,0,0)");
-      grd.addColorStop(1, "rgba(0,0,0,0.55)");
+      grd.addColorStop(0.5, "rgba(0,0,0,0.35)");
+      grd.addColorStop(1, "rgba(0,0,0,0.96)");
       ctx.save();
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, iw, ih);
@@ -595,7 +699,52 @@
     this.drawOverlay(ctx, iw, ih);
   };
 
-  // Drifting parallax starfield behind the core (dev).
+  // Buried wrecks: a faint hint when buried, a clear ship + ring when dug free.
+  Game.prototype.drawWrecks = function (ctx, iw, ih) {
+    const cam = this.cam;
+    for (const wr of this.wrecks) {
+      if (wr.salvaged) continue;
+      const sp = cam.worldToScreen(wr.x, wr.y, iw, ih);
+      if (sp.x < -10 || sp.y < -10 || sp.x > iw + 10 || sp.y > ih + 10) continue;
+      const exposed = this.world.densityAt(wr.x, wr.y) <= this.world.cfg.threshold;
+      ctx.save();
+      if (!exposed) {
+        // buried hint
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = COL.crystal;
+        ctx.fillRect((sp.x | 0) - 1, sp.y | 0, 3, 1);
+        ctx.fillRect(sp.x | 0, (sp.y | 0) - 1, 1, 3);
+      } else {
+        const r = Math.max(this.stats.playerRadius * cam.scale * 1.1, 4);
+        const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
+        ctx.strokeStyle = COL.crystal;
+        ctx.globalAlpha = pulse;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = COL.crystal;
+        ctx.shadowBlur = gb(3);
+        // broken-hull glyph: a hexagon-ish ship with a gap
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0.5, Math.PI * 2 - 0.5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sp.x - r * 0.7, sp.y - r * 0.2);
+        ctx.lineTo(sp.x + r * 0.7, sp.y - r * 0.2);
+        ctx.stroke();
+        // interaction ring when the player is in salvage range
+        if (U.dist(this.player.x, this.player.y, wr.x, wr.y) <= CFG.wreck.salvageRange * this.stats.sqrtI) {
+          ctx.globalAlpha = 0.5;
+          ctx.setLineDash([2, 3]);
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, r * 1.8, 0, TAU);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+      ctx.restore();
+    }
+  };
+
+  // Drifting parallax dust layer (dev), moves slower than the world.
   Game.prototype.drawParallax = function (ctx, iw, ih) {
     const tile = 46;
     const off = 0.3;
@@ -607,12 +756,13 @@
     for (let gy = -1; gy * tile - oy < ih; gy++) {
       for (let gx = -1; gx * tile - ox < iw; gx++) {
         const h = U.hash2(gx, gy, this.world.seed + 71);
-        if (h > 0.42) continue;
+        if (h > 0.55) continue;
         const sx = (gx * tile - ox + U.hash2(gx, gy, 13) * tile) | 0;
         const sy = (gy * tile - oy + U.hash2(gx, gy, 29) * tile) | 0;
-        ctx.globalAlpha = 0.18 + 0.32 * h * 2;
-        ctx.fillStyle = h < 0.06 ? COL.bright : COL.dim;
-        ctx.fillRect(sx, sy, 1, 1);
+        const tw = 0.7 + 0.3 * Math.sin(this.time * 1.5 + gx * 2 + gy);
+        ctx.globalAlpha = (h < 0.12 ? 0.9 : 0.5) * tw;
+        ctx.fillStyle = h < 0.12 ? COL.bright : COL.crystal;
+        ctx.fillRect(sx, sy, h < 0.12 ? 2 : 1, 1);
       }
     }
     ctx.globalAlpha = 1;
@@ -643,11 +793,11 @@
     const cam = this.cam;
     let ws = gr.world;
     let ss = ws * cam.scale;
-    while (ss < 14) {
+    while (ss < 28) {
       ws *= 2;
       ss = ws * cam.scale;
     }
-    while (ss > 64) {
+    while (ss > 110) {
       ws /= 2;
       ss = ws * cam.scale;
     }
@@ -737,10 +887,46 @@
       for (const b of f.bots) this.drawBot(ctx, b, iw, ih);
     }
 
+    if (this.shipyard) {
+      const sp = cam.worldToScreen(this.shipyard.x, this.shipyard.y, iw, ih);
+      this.drawShipyard(ctx, sp.x, sp.y, Math.max(this.shipyard.r * cam.scale, 7), this.shipyard.spin);
+    }
+
     this.drawBase(ctx, bp.x, bp.y, Math.max(this.base.r * cam.scale, 9));
     this.drawCable(ctx, iw, ih);
     this.drawBeam(ctx, iw, ih);
     this.drawShip(ctx, iw, ih);
+  };
+
+  Game.prototype.drawShipyard = function (ctx, x, y, r, spin) {
+    ctx.save();
+    ctx.strokeStyle = COL.crystal;
+    ctx.lineWidth = 1;
+    if (CFG.render.glow) {
+      ctx.shadowColor = COL.crystal;
+      ctx.shadowBlur = gb(3);
+    }
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    // a docking-bay diamond with bracket arms
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.rotate(-spin);
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + (i / 4) * TAU;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 1.1, Math.sin(a) * r * 1.1);
+      ctx.lineTo(Math.cos(a) * r * 1.5, Math.sin(a) * r * 1.5);
+      ctx.stroke();
+    }
+    ctx.fillStyle = COL.crystal;
+    ctx.fillRect(-1.5, -1.5, 3, 3);
+    ctx.restore();
   };
 
   Game.prototype.drawCable = function (ctx, iw, ih) {
@@ -808,11 +994,12 @@
     const cam = this.cam;
     const a = cam.worldToScreen(b.x1, b.y1, iw, ih);
     const c = cam.worldToScreen(b.x2, b.y2, iw, ih);
+    const thick = G.DEV.thickBeam || (this.state.augments && this.state.augments.laserStrength);
     ctx.save();
     ctx.strokeStyle = COL.beam;
-    ctx.lineWidth = G.DEV.thickBeam ? 3 : 1;
+    ctx.lineWidth = thick ? 3 : 1;
     ctx.shadowColor = COL.beam;
-    ctx.shadowBlur = gb(G.DEV.thickBeam ? 5 : 3);
+    ctx.shadowBlur = gb(thick ? 5 : 3);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(c.x, c.y);
@@ -967,8 +1154,8 @@
     const sp = this.cam.worldToScreen(b.x, b.y, iw, ih);
     const r = Math.max(this.stats.playerRadius * this.cam.scale * 0.6, 2);
     if (G.DEV.botTargets) {
-      const tx = b.mode === "return" ? b.factory.x : b.mode === "mine" ? b.mineX : b.apprX;
-      const ty = b.mode === "return" ? b.factory.y : b.mode === "mine" ? b.mineY : b.apprY;
+      const tx = b.mode === "return" ? b.factory.x : b.target ? b.target.x : b.mineX;
+      const ty = b.mode === "return" ? b.factory.y : b.target ? b.target.y : b.mineY;
       const tp = this.cam.worldToScreen(tx, ty, iw, ih);
       ctx.save();
       ctx.strokeStyle = b.mode === "return" ? COL.crystal : COL.dim;
@@ -1101,13 +1288,15 @@
   };
 
   Game.prototype.drawOverlay = function (d, W, H) {
-    // FPS readout (dev)
-    if (G.DEV.showFps) {
-      d.save();
-      d.font = "8px monospace";
-      d.fillStyle = COL.hudDim;
-      d.fillText(Math.round(this.fps) + " fps", 3, 9);
-      d.restore();
+    // FPS readout (dev) — crisp DOM element, top-left
+    const fpsEl = G.UI.el && G.UI.el.fps;
+    if (fpsEl) {
+      if (G.DEV.showFps) {
+        fpsEl.textContent = Math.round(this.fps) + " fps";
+        fpsEl.style.display = "block";
+      } else if (fpsEl.style.display !== "none") {
+        fpsEl.style.display = "none";
+      }
     }
     // slow top->bottom light sweep
     if (G.DEV.sweep) {

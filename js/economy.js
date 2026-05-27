@@ -14,14 +14,14 @@
       yieldMult: 1,
       ascends: 0,
       augments: {},
+      unlocked: {}, // special augments discovered by salvaging wrecks
       levels: {
         laserPower: 0,
-        laserRange: 0,
-        laserEff: 0,
         cargo: 0,
-        baseRange: 0,
+        energyCap: 0,
         influence: 0,
         factory: 0, // number of factories built (drives factory build cost)
+        shipyard: 0, // 0 or 1
       },
     };
   };
@@ -52,20 +52,25 @@
     const I = Economy.influenceValue(L.influence);
     const sI = Math.sqrt(I);
     const inf = CFG.influence;
+    const spd = aug.speed ? 1.3 : 1;
+    let laserPower = CFG.laser.power0 * (1 + 0.14 * L.laserPower) * D.mining;
+    if (aug.laserStrength) laserPower *= 1.5;
+    if (aug.overdrive) laserPower *= 2;
     return {
       influence: I,
       sqrtI: sI,
       playerRadius: CFG.player.radius0 * sI,
-      accel: CFG.player.accel * sI * D.shipSpeed,
-      maxSpeed: CFG.player.maxSpeed * sI * D.shipSpeed,
+      accel: CFG.player.accel * sI * D.shipSpeed * spd,
+      maxSpeed: CFG.player.maxSpeed * sI * D.shipSpeed * spd,
       turnRate: CFG.player.turnRate * D.turn,
-      laserPower: CFG.laser.power0 * (1 + 0.55 * L.laserPower) * D.mining,
-      laserRange: CFG.laser.range0 * Math.pow(I, inf.rangeExp) * (1 + 0.35 * L.laserRange),
+      laserPower: laserPower,
+      laserRange: CFG.laser.range0 * Math.pow(I, inf.rangeExp),
       carveR: CFG.laser.carveR0 * Math.pow(I, inf.carveExp),
-      yield: CFG.laser.yield0 * (1 + 0.5 * L.laserEff) * (state.yieldMult || 1),
+      yield: CFG.laser.yield0 * (state.yieldMult || 1),
       cargoCapacity: CFG.player.cargo0 * sI * (1 + 0.6 * L.cargo),
-      baseRange: CFG.base.range0 * sI * (1 + 0.3 * L.baseRange),
-      energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.35 * L.baseRange) * (aug.reserveCells ? 1.4 : 1),
+      baseRange: CFG.base.range0 * sI,
+      energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.25 * L.energyCap) * (aug.reserveCells ? 1.4 : 1),
+      recharge: CFG.player.energyRecharge * (1 + 0.35 * L.energyCap),
     };
   };
 
@@ -106,20 +111,33 @@
 
   Economy.FACTORY_UPGRADES = ["botBay", "botRange", "botPower", "botCapacity"];
 
-  // One-time, non-scaling augments (bought once, fixed cost).
+  // One-time, non-scaling augments researched & installed at the Shipyard.
+  // `special` augments stay hidden until their wreck is salvaged (unlocked).
   Economy.AUGMENTS = [
     { id: "compass", name: "Compass", desc: "A subtle arc on your hull with a needle pointing back to base, wherever you roam.", cost: { minerals: 120, crystals: 4 } },
     { id: "resonance", name: "Resonance Scanner", desc: "A second needle that points toward the nearest Catalyst vein.", cost: { minerals: 300, crystals: 10, catalyst: 3 } },
     { id: "reserveCells", name: "Reserve Cells", desc: "+40% energy capacity.", cost: { minerals: 220, crystals: 8 } },
     { id: "hullPlating", name: "Hull Plating", desc: "Bore through solid rock far faster (less slowdown inside terrain).", cost: { minerals: 260, crystals: 6 } },
     { id: "tractor", name: "Tractor Beam", desc: "Deposit cargo into a base or factory twice as fast.", cost: { minerals: 180, crystals: 5 } },
+    { id: "recharger", name: "Recharger", desc: "Slowly recharges your energy even away from base.", cost: { minerals: 280, crystals: 8 } },
+    { id: "speed", name: "Afterburners", desc: "+30% ship speed and acceleration.", cost: { minerals: 200, crystals: 6 } },
+    { id: "laserStrength", name: "Beam Amplifier", desc: "A thicker, stronger mining beam (+50% laser power).", cost: { minerals: 240, crystals: 7 } },
+    // special — recovered from wrecks
+    { id: "phaseDrive", name: "Phase Drive", desc: "Fly through solid rock at full speed.", cost: { minerals: 600, crystals: 20, catalyst: 5 }, special: true },
+    { id: "siphon", name: "Siphon Array", desc: "Pull loose ore to your ship from anywhere.", cost: { minerals: 500, crystals: 18, catalyst: 4 }, special: true },
+    { id: "overdrive", name: "Overdrive Core", desc: "+100% mining power.", cost: { minerals: 700, crystals: 24, catalyst: 6 }, special: true },
   ];
+  // Special augment ids in wreck-type order.
+  Economy.SPECIAL_AUGMENTS = ["phaseDrive", "siphon", "overdrive"];
 
   Economy.ownsAugment = function (state, id) {
     return !!(state.augments && state.augments[id]);
   };
   Economy.augmentDef = function (id) {
     return Economy.AUGMENTS.find((a) => a.id === id);
+  };
+  Economy.augmentUnlocked = function (state, a) {
+    return !a.special || !!(state.unlocked && state.unlocked[a.id]);
   };
 
   // Dev slider metadata (gameplay tab). Multipliers stored on G.DEV.
@@ -136,14 +154,15 @@
   ];
 
   Economy.UPGRADES = {
-    base: [
-      { id: "laserPower", name: "Laser Power", desc: "Carve rock faster." },
-      { id: "laserRange", name: "Laser Range", desc: "Reach deposits from farther away." },
-      { id: "laserEff", name: "Refinement", desc: "Extract more minerals per carve." },
+    ship: [
+      { id: "laserPower", name: "Laser Power", desc: "Carve veins faster." },
       { id: "cargo", name: "Cargo Hold", desc: "Carry more ore before you must return to deposit it." },
-      { id: "baseRange", name: "Base Range", desc: "Widen the recharge & control field and raise your energy capacity." },
+      { id: "energyCap", name: "Energy Capacity", desc: "More energy and a faster recharge." },
       { id: "influence", name: "Ship Class", desc: "Refit your hull to a higher class — up to Class V. Scales you up and extends your reach. Forged from rare Catalyst.", max: 4 },
+    ],
+    structures: [
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
+      { id: "shipyard", name: "Build Shipyard", desc: "Construct a shipyard to research & install ship augments. Build one, then tap it.", max: 1 },
     ],
     factory: [
       { id: "botBay", name: "Expand Bay", desc: "House more bots at this factory." },
@@ -160,10 +179,11 @@
     { glyph: "✷", cls: "c-cat", name: "Catalyst", desc: "Rare shiny material from special veins. Required to grow Influence." },
     { glyph: "▴", cls: "c-bot", name: "Bots", desc: "Active mining bots / total bay capacity across all factories." },
     { glyph: "⬡", cls: "c-fac", name: "Factories", desc: "Deployed factories. Each assembles and upgrades its own bots." },
-    { glyph: "◎", cls: "c-inf", name: "Ship Class", desc: "Your hull class (max IV). Higher class scales you up and extends your reach." },
-    { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated. Reach ~90% to Ascend." },
+    { glyph: "◎", cls: "c-inf", name: "Ship Class", desc: "Your hull class (max V). Higher class scales you up and extends your reach." },
+    { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated." },
     { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at a base (fast) or factory (slow)." },
     { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to a base or factory to deposit it." },
+    { glyph: "⌖", cls: "c-cry", name: "Wreck", desc: "Ships buried in the rock. Dig one free, then tap it to salvage — unlocks a special augment at your Shipyard." },
   ];
 
   // Developer experiment toggles (Settings menu). kind: style | play.

@@ -52,7 +52,7 @@
       rate = 0;
     if (dB <= stats.baseRange) {
       src = base;
-      rate = P.energyRecharge;
+      rate = stats.recharge;
     } else {
       const fr = CFG.factory.range0 * stats.sqrtI;
       let bd = fr,
@@ -66,7 +66,7 @@
       }
       if (bf) {
         src = bf;
-        rate = P.energyRecharge * CFG.factory.rechargeMult;
+        rate = stats.recharge * CFG.factory.rechargeMult;
       }
     }
     this.nearBase = dB <= stats.baseRange;
@@ -89,8 +89,8 @@
     const nx = Math.cos(this.angle),
       ny = Math.sin(this.angle);
     const dens = world.densityAt(this.x, this.y);
-    // center in solid terrain => 90% slower (less with Hull Plating)
-    const rockMult = dens > T ? (aug.hullPlating ? 0.35 : 0.1) : 1;
+    // center in solid terrain => slow, unless Hull Plating / Phase Drive
+    const rockMult = dens > T ? (aug.phaseDrive ? 1 : aug.hullPlating ? 0.35 : 0.1) : 1;
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
@@ -241,175 +241,157 @@
     if (DEV.infiniteEnergy) {
       this.energy = this.maxEnergy;
     } else if (src) {
-      this.energy = Math.min(this.maxEnergy, this.energy + rate * DEV.recharge * dt);
+      this.energy += rate * DEV.recharge * dt;
     } else {
+      if (aug.recharger) this.energy += stats.recharge * 0.22 * dt; // passive recharge away from base
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
-      if (this.energy < 0) this.energy = 0;
     }
+    if (this.energy < 0) this.energy = 0;
+    if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
 
     // motion trail (drawn only when the toggle is on)
     this._trail.push({ x: this.x, y: this.y });
     if (this._trail.length > 22) this._trail.shift();
   };
 
-  // ---------------- Bot (chips rock from the reachable edge) ----------------
+  // ---------------- Bot (digs outward toward veins with a close-range laser) --
   function Bot(x, y, factory, seed) {
     this.x = x;
     this.y = y;
     this.vx = 0;
     this.vy = 0;
-    this.angle = 0;
-    this.mode = "seek";
-    this.hasTarget = false;
-    this.mineX = 0;
-    this.mineY = 0;
-    this.apprX = x;
-    this.apprY = y;
-    this.mineDir = 0;
-    this.advanced = 0;
-    this.carry = { m: 0, c: 0, k: 0 };
-    this.retarget = 0;
-    this.factory = factory;
     this.rng = U.mulberry32(seed);
+    this.factory = factory;
+    this.mode = "dig";
+    this.heading = this.rng() * U.TAU;
+    this.angle = this.heading;
+    this.carry = { m: 0, c: 0, k: 0 };
+    this.target = null; // a rich cell to dig toward
+    this.retarget = this.rng() * CFG.bot.retargetTime;
+    this.pulseT = this.rng() * 0.26;
+    this.beamT = 0; // >0 while a pulse beam is visible
+    this.mineX = x;
+    this.mineY = y;
     this.beam = false;
   }
 
-  // Cast rays from the bot through cleared space to the nearest rock face.
-  Bot.prototype._seek = function (world, bstats) {
+  // Sample nearby solid rock and pick the richest cell to dig toward (veins).
+  Bot.prototype._findVein = function (world, bstats) {
     this.retarget = CFG.bot.retargetTime;
-    const rays = CFG.bot.reachRays;
-    const len = bstats.botReach;
-    const stepw = world.cell * Math.max(1, bstats.sqrtI);
-    const R2 = world.radius * world.radius;
+    const reach = bstats.botReach,
+      R2 = world.radius * world.radius;
     let best = null,
       bestScore = -1;
-    const base = this.rng() * U.TAU;
-    for (let k = 0; k < rays; k++) {
-      const ang = base + (k / rays) * U.TAU;
-      const cx = Math.cos(ang),
-        cy = Math.sin(ang);
-      let prevX = this.x,
-        prevY = this.y;
-      for (let t = stepw; t <= len; t += stepw) {
-        const px = this.x + cx * t,
-          py = this.y + cy * t;
-        if (px * px + py * py > R2) break;
-        if (world.densityAt(px, py) > T) {
-          const rich = world.richnessAt(px, py);
-          const score = 0.4 + rich - t / (len * 2);
-          if (score > bestScore) {
-            bestScore = score;
-            best = { mineX: px, mineY: py, apprX: prevX, apprY: prevY, dir: ang };
-          }
-          break;
-        }
-        prevX = px;
-        prevY = py;
+    for (let s = 0; s < 14; s++) {
+      const a = this.rng() * U.TAU;
+      const r = 20 + this.rng() * reach;
+      const px = this.x + Math.cos(a) * r,
+        py = this.y + Math.sin(a) * r;
+      if (px * px + py * py > R2) continue;
+      if (world.densityAt(px, py) <= T) continue;
+      const gi = U.clamp(Math.round((px + world.radius) / world.cell), 0, world.NX);
+      const gj = U.clamp(Math.round((py + world.radius) / world.cell), 0, world.NY);
+      const id = gj * world.P + gi;
+      let v = world.richness[id];
+      if (world.crystal[id]) v += 0.6;
+      if (world.special[id]) v += 1.2;
+      const score = v - r / (reach * 3);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x: px, y: py };
       }
     }
-    if (best) {
-      this.mineX = best.mineX;
-      this.mineY = best.mineY;
-      this.apprX = best.apprX;
-      this.apprY = best.apprY;
-      this.mineDir = best.dir;
-      this.advanced = 0;
-      this.hasTarget = true;
-    } else {
-      const a = this.rng() * U.TAU;
-      this.apprX = this.x + Math.cos(a) * len * 0.7;
-      this.apprY = this.y + Math.sin(a) * len * 0.7;
-      this.hasTarget = false;
-    }
+    this.target = best;
   };
 
+  // Smooth steer toward a point; ignoreRock lets returning bots phase home.
   Bot.prototype._steerTo = function (tx, ty, dt, bstats, world, ignoreRock) {
     const dir = Math.atan2(ty - this.y, tx - this.x);
     const speed = bstats.botSpeed;
-    const dvx = Math.cos(dir) * speed,
-      dvy = Math.sin(dir) * speed;
     const k = Math.min(1, 5 * dt);
-    this.vx += (dvx - this.vx) * k;
-    this.vy += (dvy - this.vy) * k;
+    this.vx += (Math.cos(dir) * speed - this.vx) * k;
+    this.vy += (Math.sin(dir) * speed - this.vy) * k;
     const nx = this.x + this.vx * dt,
       ny = this.y + this.vy * dt;
-    if (ignoreRock) {
-      // returning bots phase home so they never get stuck on terrain
-      this.x = nx;
-      this.y = ny;
-      if (this.vx || this.vy) this.angle = Math.atan2(this.vy, this.vx);
-      return;
-    }
-    // soft collision: chip along walls instead of ghosting through rock
-    if (world.densityAt(nx, ny) <= T) {
+    if (ignoreRock || world.densityAt(nx, ny) <= T) {
       this.x = nx;
       this.y = ny;
     } else if (world.densityAt(this.x + this.vx * dt, this.y) <= T) {
       this.x += this.vx * dt;
-      this.vy *= 0.3;
     } else if (world.densityAt(this.x, this.y + this.vy * dt) <= T) {
       this.y += this.vy * dt;
-      this.vx *= 0.3;
-    } else {
-      this.vx *= 0.25;
-      this.vy *= 0.25;
     }
     if (this.vx || this.vy) this.angle = Math.atan2(this.vy, this.vx);
   };
 
   Bot.prototype.update = function (dt, bstats, yieldMult, world, game) {
     const home = this.factory;
-    const cap = bstats.botCapacity;
-    const maxTunnel = bstats.botReach * 1.4;
-    if (this.mode === "seek") {
-      this.retarget -= dt;
-      if (!this.hasTarget || this.retarget <= 0) this._seek(world, bstats);
-      this._steerTo(this.apprX, this.apprY, dt, bstats, world);
-      if (this.hasTarget && U.dist(this.x, this.y, this.apprX, this.apprY) < bstats.botCarveR * 1.4) {
-        this.mode = "mine";
-      } else if (!this.hasTarget && U.dist(this.x, this.y, this.apprX, this.apprY) < bstats.botCarveR * 1.4) {
-        this._seek(world, bstats);
-      }
-    } else if (this.mode === "mine") {
-      this.beam = true;
-      const got = world.carve(this.mineX, this.mineY, bstats.botCarveR, bstats.botPower * dt);
-      const pm = game.pulseMult ? game.pulseMult() : 1;
-      this.carry.m += got.minerals * yieldMult * pm;
-      this.carry.c += got.crystals * yieldMult * pm;
-      this.carry.k += got.catalyst * yieldMult * pm;
-      game.spawnSpark(this.mineX, this.mineY);
-      game.spawnBotCollect(this.mineX, this.mineY, this);
-      // sit just outside the face and follow it inward as it recedes
-      const bx = this.mineX - Math.cos(this.mineDir) * bstats.botCarveR;
-      const by = this.mineY - Math.sin(this.mineDir) * bstats.botCarveR;
-      this._steerTo(bx, by, dt, bstats, world);
-      if (world.densityAt(this.mineX, this.mineY) <= T) {
-        this.mineX += Math.cos(this.mineDir) * world.cell * 1.5;
-        this.mineY += Math.sin(this.mineDir) * world.cell * 1.5;
-        this.advanced += world.cell * 1.5;
-        const off = this.mineX * this.mineX + this.mineY * this.mineY > world.radius * world.radius;
-        if (this.advanced > maxTunnel || off) {
-          this.mode = "return";
-          this.beam = false;
-          this.hasTarget = false;
-        }
-      }
-      if (this.carry.m >= cap) {
-        this.mode = "return";
-        this.beam = false;
-        this.hasTarget = false;
-      }
-    } else {
+    if (this.beamT > 0) this.beamT -= dt;
+
+    if (this.mode === "return") {
       this._steerTo(home.x, home.y, dt, bstats, world, true);
       if (U.dist(this.x, this.y, home.x, home.y) < CFG.bot.depositRange * bstats.sqrtI) {
         game.addResources(this.carry.m, this.carry.c, this.carry.k, true);
         game.spawnDeposit(home.x, home.y);
         this.carry.m = this.carry.c = this.carry.k = 0;
-        this.advanced = 0;
-        this.mode = "seek";
-        this.hasTarget = false;
+        this.mode = "dig";
+        this.target = null;
+        this.heading = this.rng() * U.TAU;
       }
+      this.beam = this.beamT > 0;
+      return;
+    }
+
+    // DIG: head toward the nearest rich vein (or outward), pulsing the laser.
+    this.retarget -= dt;
+    if (!this.target || this.retarget <= 0) this._findVein(world, bstats);
+    let desired;
+    if (this.target) desired = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+    else desired = Math.atan2(this.y - home.y, this.x - home.x); // away from home
+    this.heading = U.lerpAngle(this.heading, desired, Math.min(1, 2.5 * dt));
+    const hx = Math.cos(this.heading),
+      hy = Math.sin(this.heading);
+
+    // move (slow while digging); blocked by un-carved rock
+    const speed = bstats.botSpeed * 0.55;
+    this.vx = hx * speed;
+    this.vy = hy * speed;
+    const nx = this.x + this.vx * dt,
+      ny = this.y + this.vy * dt;
+    const blocked = world.densityAt(nx, ny) > T;
+    if (!blocked) {
+      this.x = nx;
+      this.y = ny;
+    }
+    this.angle = this.heading;
+
+    // pulse the close-range laser to chip rock just ahead
+    this.pulseT -= dt;
+    const ax = this.x + hx * bstats.botCarveR * 1.1,
+      ay = this.y + hy * bstats.botCarveR * 1.1;
+    const rockAhead = world.densityAt(ax, ay) > T;
+    if (this.pulseT <= 0 && (rockAhead || blocked)) {
+      this.pulseT = 0.26;
+      const pm = game.pulseMult ? game.pulseMult() : 1;
+      const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower * 0.45);
+      this.carry.m += got.minerals * yieldMult * pm;
+      this.carry.c += got.crystals * yieldMult * pm;
+      this.carry.k += got.catalyst * yieldMult * pm;
+      this.beamT = 0.14;
+      this.mineX = ax;
+      this.mineY = ay;
+      game.spawnSpark(ax, ay);
+      if (got.minerals + got.crystals + got.catalyst > 0.01) game.spawnBotCollect(ax, ay, this);
+      this.heading += (this.rng() - 0.5) * 0.7; // little turn
+    }
+    this.beam = this.beamT > 0;
+
+    // return when full or roamed too far
+    const cap = bstats.botCapacity;
+    const off = this.x * this.x + this.y * this.y > world.radius * world.radius;
+    if (this.carry.m + this.carry.c + this.carry.k >= cap || U.dist(this.x, this.y, home.x, home.y) > bstats.botReach || off) {
+      this.mode = "return";
     }
   };
 
@@ -456,6 +438,26 @@
   Base.prototype.update = function (dt) {
     this.spin += dt * 0.4;
   };
+
+  // ---------------- Shipyard (built structure; hosts augment research) -------
+  function Shipyard(x, y) {
+    this.x = x;
+    this.y = y;
+    this.panel = "shipyard";
+    this.r = 16;
+    this.spin = 0;
+  }
+  Shipyard.prototype.update = function (dt) {
+    this.spin -= dt * 0.5;
+  };
+
+  // ---------------- Wreck (buried ship; dig free + tap to salvage) ----------
+  function Wreck(x, y, type) {
+    this.x = x;
+    this.y = y;
+    this.type = type; // -> special augment
+    this.salvaged = false;
+  }
 
   // ---------------- Rope (recharge cable; verlet, looks dragged) ----------------
   function Rope(segs) {
@@ -529,5 +531,7 @@
   G.Bot = Bot;
   G.Factory = Factory;
   G.Base = Base;
+  G.Shipyard = Shipyard;
+  G.Wreck = Wreck;
   G.Rope = Rope;
 })(window.G);

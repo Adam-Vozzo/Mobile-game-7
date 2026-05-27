@@ -38,7 +38,7 @@
     render: {
       targetInternalW: 240,
       glow: true,
-      grid: { world: 28, alpha: 0.055 }, // world-anchored line grid (base spacing in world units)
+      grid: { world: 44, alpha: 0.055 }, // world-anchored line grid (base spacing in world units)
       sweep: { period: 9, alpha: 0.07, band: 0.42 }, // slow top->bottom light sweep
       vignette: 0.5,
     },
@@ -115,13 +115,12 @@
     // ----- economy: upgrade costs (geometric). catalyst gates Influence. -----
     cost: {
       laserPower: { minerals: 18, growth: 1.55 },
-      laserRange: { minerals: 22, growth: 1.5 },
-      laserEff: { minerals: 30, growth: 1.62 },
       cargo: { minerals: 28, growth: 1.5 },
-      baseRange: { minerals: 35, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
+      energyCap: { minerals: 32, growth: 1.5 },
       // Ship Class: capped at 4, paid in rare Catalyst (+ crystals)
       influence: { crystals: 30, catalyst: 5, growth: 2.0, crystalGrowth: 2.0, catalystGrowth: 2.0 },
       factory: { minerals: 120, crystals: 2, growth: 2.0, crystalGrowth: 1.6 },
+      shipyard: { minerals: 250, crystals: 8, growth: 1 },
       // per-factory bot upgrades
       botBay: { minerals: 90, crystals: 3, growth: 1.9, crystalGrowth: 1.7 },
       botRange: { minerals: 40, growth: 1.5 },
@@ -131,6 +130,9 @@
 
     // ----- loose ore pickups (spawned when cargo is full) -----
     pickup: { pullRange: 95, mergeRange: 16, maxCount: 90, chunk: 0.22 },
+
+    // ----- buried wrecks to salvage (unlock special augments) -----
+    wreck: { count: 8, salvageRange: 60, reward: { minerals: 400, crystals: 30, catalyst: 6 } },
 
     // ----- misc -----
     save: { key: "coreforge.save.v2", interval: 8 },
@@ -154,7 +156,7 @@
     thickBeam: false,
     depthHaze: false,
     // gameplay toggles
-    veinOnly: false,
+    veinOnly: true,
     laserHeat: false,
     corePulse: false,
     shipTrail: false,
@@ -178,5 +180,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b17";
+  G.BUILD = "2026-05-26 · b18";
 })(window.G);
