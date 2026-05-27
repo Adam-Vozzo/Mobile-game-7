@@ -61,7 +61,7 @@
       crystalPerCell: 0.6,
       catalystPerCell: 0.25,
       startPocket: 68,
-      maxRenderCells: 120,
+      maxRenderCells: 160,
     },
 
     // ----- player ship (asteroids-style) -----
@@ -182,5 +182,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b19";
+  G.BUILD = "2026-05-28 · b20";
 })(window.G);

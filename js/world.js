@@ -185,9 +185,14 @@
     const across = i1 - i0;
     const step = Math.max(1, Math.ceil(across / this.cfg.maxRenderCells));
 
-    // Rock fill can be coarser than the contour without hurting the look,
-    // which keeps the far-zoom (whole-core) view fast.
+    // Rock fill can be coarser than the contour (keeps big screens fast).
     const fillStep = Math.max(step, Math.ceil(across / 64));
+    // Anchor each LOD sample lattice to fixed step multiples so the terrain
+    // doesn't shimmer / re-fragment as the camera pans.
+    const ci0 = Math.floor(i0 / step) * step,
+      cj0 = Math.floor(j0 / step) * step;
+    const fi0 = Math.floor(i0 / fillStep) * fillStep,
+      fj0 = Math.floor(j0 / fillStep) * fillStep;
     const COL = G.CFG.COL;
     const camx = cam.x,
       camy = cam.y,
@@ -196,7 +201,7 @@
       hh = vh * 0.5;
 
     // 1) rock fill (dark) — keep the path to clip the glow into it later
-    const rockPath = this._rockPath(i0, i1, j0, j1, fillStep, camx, camy, scale, hw, hh);
+    const rockPath = this._rockPath(fi0, i1, fj0, j1, fillStep, camx, camy, scale, hw, hh);
     ctx.save();
     ctx.shadowBlur = 0;
     ctx.fillStyle = G.DEV.invertTerrain ? COL.rockAlt : COL.rock;
@@ -204,18 +209,18 @@
     ctx.restore();
 
     // 1b) vein scanner overlay (dev): tint solid cells by richness
-    if (G.DEV.veinScanner) this._scanner(ctx, i0, i1, j0, j1, fillStep, camx, camy, scale, hw, hh);
+    if (G.DEV.veinScanner) this._scanner(ctx, fi0, i1, fj0, j1, fillStep, camx, camy, scale, hw, hh);
 
     // 2) textured dots
     this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
 
     // 3) build the contour (marching squares) directly in screen coords
     const cont = new Path2D();
-    for (let j = j0; j < j1; j += step) {
+    for (let j = cj0; j < j1; j += step) {
       const jj = Math.min(j + step, this.NY);
       const sj0 = hh + (this.worldY(j) - camy) * scale;
       const sj1 = hh + (this.worldY(jj) - camy) * scale;
-      for (let i = i0; i < i1; i += step) {
+      for (let i = ci0; i < i1; i += step) {
         const ii = Math.min(i + step, this.NX);
         const va = d[j * P + i],
           vb = d[j * P + ii],
