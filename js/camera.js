@@ -11,14 +11,15 @@
     this._targetScale = 1;
   }
 
-  // viewWidth = world units visible across the internal canvas.
-  Camera.prototype.viewWidth = function (influence) {
-    return G.CFG.camera.baseView * Math.sqrt(influence);
+  // Zoom (game-px per world unit) depends only on influence, NOT the canvas
+  // size — so larger screens reveal more world at the same apparent zoom.
+  Camera.prototype.zoom = function (influence) {
+    return G.CFG.camera.baseScale / Math.sqrt(influence);
   };
 
   Camera.prototype.update = function (dt, tx, ty, tvx, tvy, influence, vw) {
     const c = G.CFG.camera;
-    this._targetScale = vw / this.viewWidth(influence);
+    this._targetScale = this.zoom(influence);
     const k = 1 - Math.exp(-c.follow * dt);
     const lead = c.lead;
     const gx = tx + tvx * lead;
@@ -31,7 +32,7 @@
   Camera.prototype.snap = function (tx, ty, influence, vw) {
     this.x = tx;
     this.y = ty;
-    this.scale = vw / this.viewWidth(influence);
+    this.scale = this.zoom(influence);
     this._targetScale = this.scale;
   };
 

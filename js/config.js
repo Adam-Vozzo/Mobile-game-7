@@ -36,7 +36,9 @@
 
     // ----- renderer -----
     render: {
-      targetInternalW: 240,
+      pixelCss: 1.625, // CSS px per game pixel (chunkiness); internal res scales with the screen
+      minInternalW: 200,
+      maxInternalW: 900,
       glow: true,
       grid: { world: 44, alpha: 0.055 }, // world-anchored line grid (base spacing in world units)
       sweep: { period: 9, alpha: 0.07, band: 0.42 }, // slow top->bottom light sweep
@@ -103,7 +105,7 @@
     },
 
     // ----- camera -----
-    camera: { baseView: 320, follow: 6.5, lead: 0.18 },
+    camera: { baseScale: 0.75, follow: 6.5, lead: 0.18 }, // baseScale = game-px per world unit at Ship Class I
 
     // ----- influence / scale -----
     influence: { start: 1, carveExp: 1.0, rangeExp: 0.65 },
@@ -180,5 +182,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-26 · b18";
+  G.BUILD = "2026-05-28 · b19";
 })(window.G);

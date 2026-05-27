@@ -644,9 +644,10 @@
     const cssH = this.canvas.clientHeight || window.innerHeight;
     this.cssW = cssW;
     this.cssH = cssH;
-    // Render at a low internal resolution; CSS upscales the canvas (pixelated).
-    // No large backing store / drawImage upscale -> avoids a Firefox GPU bug.
-    this.iw = Math.max(1, Math.min(CFG.render.targetInternalW, Math.round(cssW)));
+    // Internal resolution scales with the screen (consistent pixel size), then
+    // CSS upscales the canvas (pixelated). Bigger screens = crisper + more world.
+    const r = CFG.render;
+    this.iw = Math.max(1, U.clamp(Math.round(cssW / r.pixelCss), r.minInternalW, r.maxInternalW));
     this.ih = Math.max(1, Math.round(this.iw * (cssH / cssW)));
     this.canvas.width = this.iw;
     this.canvas.height = this.ih;
