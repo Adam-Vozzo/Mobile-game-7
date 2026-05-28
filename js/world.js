@@ -124,9 +124,13 @@
         this.density[id] = cur - take;
         this.removedTotal += take;
         const rich = this.richness[id];
-        // regular rock pays almost nothing; rich veins pay the most
-        const base = G.DEV.veinOnly ? 0 : 0.015;
-        minerals += take * w.massPerCell * (base + rich * rich * 2.8);
+        // only mineral veins pay; bare rock below the vein cut yields nothing
+        // (vein-only mode). Otherwise a faint trickle from any rock.
+        if (G.DEV.veinOnly) {
+          if (rich >= w.veinRichCut) minerals += take * w.massPerCell * rich * rich * 2.8;
+        } else {
+          minerals += take * w.massPerCell * (0.015 + rich * rich * 2.8);
+        }
         if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
         if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
       }
@@ -166,7 +170,7 @@
   };
 
   // ---- rendering: marching-squares contours + textured dots ----
-  World.prototype.render = function (ctx, cam, vw, vh, time) {
+  World.prototype.render = function (ctx, cam, vw, vh, time, scan) {
     const T = this.cfg.threshold,
       cell = this.cell,
       R = this.radius,
@@ -184,15 +188,14 @@
     let j1 = U.clamp(Math.ceil((maxWY + R) / cell) + 1, 0, this.NY);
     const across = i1 - i0;
     const step = Math.max(1, Math.ceil(across / this.cfg.maxRenderCells));
-
-    // Rock fill can be coarser than the contour (keeps big screens fast).
-    const fillStep = Math.max(step, Math.ceil(across / 64));
-    // Anchor each LOD sample lattice to fixed step multiples so the terrain
-    // doesn't shimmer / re-fragment as the camera pans.
+    // The inner-glow clip is costly over a wide view, so only do it when zoomed in.
+    const nearZoom = across <= 80;
+    // Anchor the sample lattice to fixed step multiples so the terrain doesn't
+    // shimmer / re-fragment as the camera pans. Fill and contour share this same
+    // lattice so the dark fill and the glowing edge always trace the same cells
+    // (otherwise the fill drifts out of sync with the outline on wide screens).
     const ci0 = Math.floor(i0 / step) * step,
       cj0 = Math.floor(j0 / step) * step;
-    const fi0 = Math.floor(i0 / fillStep) * fillStep,
-      fj0 = Math.floor(j0 / fillStep) * fillStep;
     const COL = G.CFG.COL;
     const camx = cam.x,
       camy = cam.y,
@@ -200,26 +203,21 @@
       hw = vw * 0.5,
       hh = vh * 0.5;
 
-    // 1) rock fill (dark) — keep the path to clip the glow into it later
-    const rockPath = this._rockPath(fi0, i1, fj0, j1, fillStep, camx, camy, scale, hw, hh);
-    ctx.save();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = G.DEV.invertTerrain ? COL.rockAlt : COL.rock;
-    ctx.fill(rockPath);
-    ctx.restore();
-
-    // 1b) vein scanner overlay (dev): tint solid cells by richness
-    if (G.DEV.veinScanner) this._scanner(ctx, fi0, i1, fj0, j1, fillStep, camx, camy, scale, hw, hh);
-
-    // 2) textured dots
-    this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
-
-    // 3) build the contour (marching squares) directly in screen coords
+    // Build the rock fill AND the marching-squares contour in ONE pass over the
+    // cell lattice. The fill is the union of every cell that touches rock, merged
+    // into horizontal rects (no per-cell polygons — that geometry is what was
+    // expensive). The crisp contour line is drawn just inside this fill, so the
+    // dark body and the glowing edge stay visually locked together (no background
+    // gap) at any zoom or screen width, while the fill stays cheap to build.
+    const rockPath = new Path2D();
     const cont = new Path2D();
     for (let j = cj0; j < j1; j += step) {
       const jj = Math.min(j + step, this.NY);
       const sj0 = hh + (this.worldY(j) - camy) * scale;
       const sj1 = hh + (this.worldY(jj) - camy) * scale;
+      const rowH = sj1 - sj0;
+      let runX0 = -1,
+        runX1 = -1; // horizontal run of rock-touching cells -> one merged rect
       for (let i = ci0; i < i1; i += step) {
         const ii = Math.min(i + step, this.NX);
         const va = d[j * P + i],
@@ -231,49 +229,66 @@
           c2 = vc > T,
           c3 = vd > T;
         const mask = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
-        if (mask === 0 || mask === 15) continue;
         const si0 = hw + (this.worldX(i) - camx) * scale;
         const si1 = hw + (this.worldX(ii) - camx) * scale;
-        const top = () => [si0 + (si1 - si0) * ((T - va) / (vb - va)), sj0];
-        const right = () => [si1, sj0 + (sj1 - sj0) * ((T - vb) / (vc - vb))];
-        const bot = () => [si1 + (si0 - si1) * ((T - vc) / (vd - vc)), sj1];
-        const left = () => [si0, sj1 + (sj0 - sj1) * ((T - vd) / (va - vd))];
+        // fill: any cell touching rock joins the run; an empty cell flushes it
+        if (mask !== 0) {
+          if (runX0 < 0) runX0 = si0;
+          runX1 = si1;
+        } else if (runX0 >= 0) {
+          rockPath.rect(runX0, sj0, runX1 - runX0, rowH);
+          runX0 = -1;
+        }
+        // contour line(s) for boundary cells (interior & empty cells have none)
+        if (mask === 0 || mask === 15) continue;
+        const tX = si0 + (si1 - si0) * ((T - va) / (vb - va));
+        const rY = sj0 + (sj1 - sj0) * ((T - vb) / (vc - vb));
+        const bX = si1 + (si0 - si1) * ((T - vc) / (vd - vc));
+        const lY = sj1 + (sj0 - sj1) * ((T - vd) / (va - vd));
         const crossed = [];
-        if (c0 !== c1) crossed.push(top);
-        if (c1 !== c2) crossed.push(right);
-        if (c2 !== c3) crossed.push(bot);
-        if (c3 !== c0) crossed.push(left);
-        if (crossed.length === 2) {
-          const a = crossed[0](),
-            b = crossed[1]();
-          cont.moveTo(a[0], a[1]);
-          cont.lineTo(b[0], b[1]);
-        } else if (crossed.length === 4) {
+        if (c0 !== c1) crossed.push(tX, sj0);
+        if (c1 !== c2) crossed.push(si1, rY);
+        if (c2 !== c3) crossed.push(bX, sj1);
+        if (c3 !== c0) crossed.push(si0, lY);
+        if (crossed.length === 4) {
+          cont.moveTo(crossed[0], crossed[1]);
+          cont.lineTo(crossed[2], crossed[3]);
+        } else if (crossed.length === 8) {
           const center = (va + vb + vc + vd) / 4 > T;
-          const t = top(),
-            r = right(),
-            b = bot(),
-            l = left();
           if (center === c0) {
-            cont.moveTo(t[0], t[1]);
-            cont.lineTo(r[0], r[1]);
-            cont.moveTo(b[0], b[1]);
-            cont.lineTo(l[0], l[1]);
+            cont.moveTo(tX, sj0);
+            cont.lineTo(si1, rY);
+            cont.moveTo(bX, sj1);
+            cont.lineTo(si0, lY);
           } else {
-            cont.moveTo(t[0], t[1]);
-            cont.lineTo(l[0], l[1]);
-            cont.moveTo(r[0], r[1]);
-            cont.lineTo(b[0], b[1]);
+            cont.moveTo(tX, sj0);
+            cont.lineTo(si0, lY);
+            cont.moveTo(si1, rY);
+            cont.lineTo(bX, sj1);
           }
         }
       }
+      if (runX0 >= 0) rockPath.rect(runX0, sj0, runX1 - runX0, rowH);
     }
 
-    // 4) stroke. When zoomed in, clip the glow to the rock so it only bleeds
-    // INWARD (inner glow), then lay a crisp edge line on top. Far out, one pass.
+    // 1) rock fill (dark) — under everything; path is reused to clip the glow
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = G.DEV.invertTerrain ? COL.rockAlt : COL.rock;
+    ctx.fill(rockPath);
+    ctx.restore();
+
+    // 1b) vein scanner overlay (researched augment, or dev force): mark veins
+    if (scan) this._scanner(ctx, scan, cam, vw, vh, time);
+
+    // 2) textured dots (open caverns only)
+    this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
+
+    // 3) stroke the contour. When zoomed in, clip the glow to the rock so it only
+    // bleeds INWARD (inner glow), then lay a crisp edge line on top. Far out, one pass.
     const blur = (G.CFG.render.glow ? (G.DEV.bloom ? 9 : 5) : 0) * G.DEV.glow;
     ctx.lineWidth = 1;
-    if (blur > 0.1 && fillStep === step) {
+    if (blur > 0.1 && nearZoom) {
       ctx.save();
       ctx.clip(rockPath);
       ctx.strokeStyle = COL.bright;
@@ -293,92 +308,86 @@
     }
   };
 
-  // Build a Path2D (screen coords) of solid terrain, run-length-merged. Used
-  // both to fill the rock and to clip the inner-glow stroke.
-  World.prototype._rockPath = function (i0, i1, j0, j1, step, camx, camy, scale, hw, hh) {
+  // Vein scanner: mark each vein cell within scan range around the ship with a
+  // type-distinct glyph — gold diamond (minerals), pale shard (crystal), white
+  // sparkle (catalyst). The sample step targets a fixed on-screen spacing, so the
+  // dot density stays consistent on any screen width (it tracks zoom, not pixels).
+  // scan = { px, py, range } in world units (range Infinity = whole view).
+  World.prototype._scanner = function (ctx, scan, cam, vw, vh, time) {
     const P = this.P,
       d = this.density,
-      th = this.cfg.threshold;
-    const path = new Path2D();
-    for (let j = j0; j < j1; j += step) {
-      const jj = Math.min(j + step, this.NY);
-      const sy0 = hh + (this.worldY(j) - camy) * scale;
-      const syH = (this.worldY(jj) - this.worldY(j)) * scale;
-      let runStart = -1,
-        runEnd = -1; // run of fully-solid cells -> one wide rect
-      for (let i = i0; i < i1; i += step) {
-        const ii = Math.min(i + step, this.NX);
-        const va = d[j * P + i],
-          vb = d[j * P + ii],
-          vc = d[jj * P + ii],
-          vd = d[jj * P + i];
-        const c0 = va > th,
-          c1 = vb > th,
-          c2 = vc > th,
-          c3 = vd > th;
-        const mask = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
-        if (mask === 15) {
-          if (runStart < 0) runStart = i;
-          runEnd = ii;
-          continue;
-        }
-        if (runStart >= 0) {
-          const rx0 = hw + (this.worldX(runStart) - camx) * scale;
-          path.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
-          runStart = -1;
-        }
-        if (mask === 0) continue;
-        const wx0 = this.worldX(i),
-          wx1 = this.worldX(ii),
-          wy0 = this.worldY(j),
-          wy1 = this.worldY(jj);
-        const poly = [];
-        if (c0) poly.push(wx0, wy0);
-        if (c0 !== c1) poly.push(U.lerp(wx0, wx1, (th - va) / (vb - va)), wy0);
-        if (c1) poly.push(wx1, wy0);
-        if (c1 !== c2) poly.push(wx1, U.lerp(wy0, wy1, (th - vb) / (vc - vb)));
-        if (c2) poly.push(wx1, wy1);
-        if (c2 !== c3) poly.push(U.lerp(wx1, wx0, (th - vc) / (vd - vc)), wy1);
-        if (c3) poly.push(wx0, wy1);
-        if (c3 !== c0) poly.push(wx0, U.lerp(wy1, wy0, (th - vd) / (va - vd)));
-        if (poly.length >= 6) {
-          path.moveTo(hw + (poly[0] - camx) * scale, hh + (poly[1] - camy) * scale);
-          for (let p = 2; p < poly.length; p += 2) path.lineTo(hw + (poly[p] - camx) * scale, hh + (poly[p + 1] - camy) * scale);
-          path.closePath();
-        }
-      }
-      if (runStart >= 0) {
-        const rx0 = hw + (this.worldX(runStart) - camx) * scale;
-        path.rect(rx0, sy0, (this.worldX(runEnd) - this.worldX(runStart)) * scale, syH);
-      }
-    }
-    return path;
-  };
-
-  // Vein scanner (dev): fill solid cells with an alpha proportional to richness
-  // so mineral-rich veins glow, like a prospector overlay.
-  // Vein scanner (dev): a soft glowing dot at each rich solid cell (no blocky
-  // rect edges). Brighter for richer / crystal / catalyst.
-  World.prototype._scanner = function (ctx, i0, i1, j0, j1, step, camx, camy, scale, hw, hh) {
-    const P = this.P,
-      d = this.density,
-      th = this.cfg.threshold;
+      th = this.cfg.threshold,
+      cell = this.cell,
+      R = this.radius,
+      cut = this.cfg.veinRichCut;
     const COL = G.CFG.COL;
+    const camx = cam.x,
+      camy = cam.y,
+      scale = cam.scale,
+      hw = vw * 0.5,
+      hh = vh * 0.5;
+    const tl = cam.screenToWorld(0, 0, vw, vh),
+      br = cam.screenToWorld(vw, vh, vw, vh);
+    let i0 = U.clamp(Math.floor((Math.min(tl.x, br.x) + R) / cell), 0, this.NX);
+    const i1 = U.clamp(Math.ceil((Math.max(tl.x, br.x) + R) / cell), 0, this.NX);
+    let j0 = U.clamp(Math.floor((Math.min(tl.y, br.y) + R) / cell), 0, this.NY);
+    const j1 = U.clamp(Math.ceil((Math.max(tl.y, br.y) + R) / cell), 0, this.NY);
+    const sStep = Math.max(1, Math.round(G.CFG.scanner.samplepx / (cell * scale)));
+    i0 = Math.floor(i0 / sStep) * sStep; // snap lattice -> stable while panning
+    j0 = Math.floor(j0 / sStep) * sStep;
+    const rng = scan.range,
+      rng2 = rng === Infinity ? Infinity : rng * rng,
+      px = scan.px,
+      py = scan.py;
     ctx.save();
     ctx.shadowBlur = 0;
-    for (let j = j0; j < j1; j += step) {
-      const sy = hh + (this.worldY(j) - camy) * scale;
-      for (let i = i0; i < i1; i += step) {
+    for (let j = j0; j < j1; j += sStep) {
+      const wy = this.worldY(j);
+      const sy = (hh + (wy - camy) * scale) | 0;
+      if (sy < -4 || sy > vh + 4) continue;
+      for (let i = i0; i < i1; i += sStep) {
         const id = j * P + i;
         if (d[id] <= th) continue;
         const rich = this.richness[id];
-        if (rich < 0.35 && !this.crystal[id] && !this.special[id]) continue;
-        const sx = hw + (this.worldX(i) - camx) * scale;
-        ctx.fillStyle = this.special[id] ? COL.catalystDot : this.crystal[id] ? COL.crystalDot : COL.mineralDot;
-        ctx.globalAlpha = Math.min(0.85, 0.25 + rich * rich * 0.8);
-        ctx.beginPath();
-        ctx.arc(sx, sy, 1.6, 0, U.TAU);
-        ctx.fill();
+        const isCry = this.crystal[id],
+          isCat = this.special[id];
+        if (rich < cut && !isCry && !isCat) continue;
+        const wx = this.worldX(i);
+        if (rng2 !== Infinity) {
+          const dx = wx - px,
+            dy = wy - py;
+          if (dx * dx + dy * dy > rng2) continue;
+        }
+        const sx = (hw + (wx - camx) * scale) | 0;
+        if (sx < -4 || sx > vw + 4) continue;
+        if (isCat) {
+          // catalyst: bright white sparkle that twinkles
+          const tw = 0.55 + 0.45 * Math.sin(time * 5 + i * 2.3 + j * 1.7);
+          ctx.globalAlpha = 0.4 + 0.6 * tw;
+          ctx.fillStyle = COL.catalystDot;
+          ctx.fillRect(sx, sy - 1, 1, 3);
+          ctx.fillRect(sx - 1, sy, 3, 1);
+          if (tw > 0.45) {
+            ctx.fillRect(sx - 1, sy - 1, 1, 1);
+            ctx.fillRect(sx + 1, sy - 1, 1, 1);
+            ctx.fillRect(sx - 1, sy + 1, 1, 1);
+            ctx.fillRect(sx + 1, sy + 1, 1, 1);
+          }
+        } else if (isCry) {
+          // crystal: pale vertical shard
+          ctx.globalAlpha = 0.5 + 0.4 * Math.min(1, rich + 0.3);
+          ctx.fillStyle = COL.crystalDot;
+          ctx.fillRect(sx, sy - 2, 1, 5);
+          ctx.fillRect(sx - 1, sy, 1, 1);
+          ctx.fillRect(sx + 1, sy, 1, 1);
+        } else {
+          // mineral: gold diamond, brighter with richness
+          ctx.globalAlpha = Math.min(0.9, 0.32 + rich * rich * 0.9);
+          ctx.fillStyle = COL.mineralDot;
+          ctx.fillRect(sx, sy - 1, 1, 1);
+          ctx.fillRect(sx - 1, sy, 3, 1);
+          ctx.fillRect(sx, sy + 1, 1, 1);
+        }
       }
     }
     ctx.globalAlpha = 1;
@@ -411,8 +420,9 @@
         const sx = s.x | 0,
           sy = s.y | 0;
         if (sx < 0 || sy < 0 || sx >= vw || sy >= vh) continue;
+        // Only the open caverns are textured: faint drifting dust + a few stars.
+        // What's buried in the rock is hidden unless the Vein Scanner reveals it.
         if (dens <= T) {
-          // Open cavern: faint drifting dust, with a few brighter stars.
           if (h < 0.06) {
             ctx.fillStyle = COL.bright;
             ctx.globalAlpha = 0.6 + 0.3 * Math.sin(time * 1.3 + ax * 3.1 + ay);
@@ -421,35 +431,6 @@
           } else if (h < 0.28) {
             ctx.fillStyle = COL.dim;
             ctx.fillRect(sx, sy, 1, 1);
-          }
-        } else {
-          // Solid rock: ore glints showing what's worth mining.
-          const gi = U.clamp(Math.round((wx + this.radius) / this.cell), 0, this.NX);
-          const gj = U.clamp(Math.round((wy + this.radius) / this.cell), 0, this.NY);
-          const id = gj * this.P + gi;
-          if (this.special[id]) {
-            // Catalyst: brightest, a twinkling X (diagonal sparkle)
-            const tw = 0.5 + 0.5 * Math.sin(time * 5 + ax * 2.3 + ay * 1.7);
-            ctx.fillStyle = COL.catalystDot;
-            ctx.globalAlpha = 0.35 + 0.65 * tw;
-            ctx.fillRect(sx, sy, 1, 1);
-            if (tw > 0.35) {
-              ctx.fillRect(sx - 1, sy - 1, 1, 1);
-              ctx.fillRect(sx + 1, sy - 1, 1, 1);
-              ctx.fillRect(sx - 1, sy + 1, 1, 1);
-              ctx.fillRect(sx + 1, sy + 1, 1, 1);
-            }
-            ctx.globalAlpha = 1;
-          } else if (this.crystal[id] && h < 0.34) {
-            // Crystal: a pale vertical shard
-            ctx.fillStyle = COL.crystalDot;
-            ctx.fillRect(sx, sy - 1, 1, 3);
-          } else if (this.richness[id] > 0.5 && h < 0.42) {
-            // Mineral: a gold diamond (orthogonal plus)
-            ctx.fillStyle = COL.mineralDot;
-            ctx.fillRect(sx, sy - 1, 1, 1);
-            ctx.fillRect(sx - 1, sy, 3, 1);
-            ctx.fillRect(sx, sy + 1, 1, 1);
           }
         }
       }

@@ -517,6 +517,25 @@ body {
   font-size: 12px;
   letter-spacing: 1px;
 }
+/* leveled-augment pip meter (e.g. Vein Scanner: 3 levels) */
+.lvl-pips {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.lvl-pip {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--panel-line);
+  border-radius: 2px;
+  background: transparent;
+}
+.lvl-pip.on {
+  background: var(--bright);
+  border-color: var(--bright);
+  box-shadow: 0 0 5px rgba(255, 130, 0, 0.55);
+}
 
 /* ---------- Glossary ---------- */
 .gloss {

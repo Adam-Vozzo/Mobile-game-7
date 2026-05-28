@@ -329,24 +329,39 @@
         list.appendChild(row);
         continue;
       }
-      const owned = Eco.ownsAugment(s, a.id);
-      const afford = Eco.canPay(s, a.cost);
-      row.className = "upg" + (owned ? " owned" : afford ? "" : " locked") + (a.special ? " ascend" : "");
-      row.disabled = owned || !afford;
+      const max = Eco.augmentMax(a);
+      const leveled = max > 1;
+      const level = Eco.augmentLevel(s, a.id);
+      const maxed = level >= max;
+      const cost = Eco.augmentTierCost(a, Math.min(level, max - 1));
+      const afford = !maxed && Eco.canPay(s, cost);
+      row.className = "upg" + (maxed ? " owned" : afford ? "" : " locked") + (a.special ? " ascend" : "");
+      row.disabled = maxed || !afford;
+
+      // leveled augments (e.g. Vein Scanner) show a pip meter for their levels
+      let nameExtra = "";
+      if (leveled) {
+        let pips = "";
+        for (let k = 0; k < max; k++) pips += '<span class="lvl-pip' + (k < level ? " on" : "") + '"></span>';
+        nameExtra = '<span class="lvl-pips">' + pips + "</span>";
+      } else if (a.special) {
+        nameExtra = ' <span class="upg-lvl">salvaged</span>';
+      }
+
       let costHtml;
-      if (owned) {
-        costHtml = '<span class="c-owned">OWNED</span>';
+      if (maxed) {
+        costHtml = '<span class="c-owned">' + (leveled ? "MAX" : "OWNED") + "</span>";
       } else {
-        costHtml = '<span class="c-min">◈ ' + U.formatNum(a.cost.minerals || 0) + "</span>";
-        if (a.cost.crystals) costHtml += '<span class="c-cry">✦ ' + U.formatNum(a.cost.crystals) + "</span>";
-        if (a.cost.catalyst) costHtml += '<span class="c-cat">✷ ' + U.formatNum(a.cost.catalyst) + "</span>";
+        costHtml = '<span class="c-min">◈ ' + U.formatNum(cost.minerals || 0) + "</span>";
+        if (cost.crystals) costHtml += '<span class="c-cry">✦ ' + U.formatNum(cost.crystals) + "</span>";
+        if (cost.catalyst) costHtml += '<span class="c-cat">✷ ' + U.formatNum(cost.catalyst) + "</span>";
       }
       row.innerHTML =
-        '<div class="upg-main"><div class="upg-name">' + a.name + (a.special ? ' <span class="upg-lvl">salvaged</span>' : "") + "</div>" +
+        '<div class="upg-main"><div class="upg-name">' + a.name + nameExtra + "</div>" +
         '<div class="upg-desc">' + a.desc + "</div></div>" +
         '<div class="upg-cost">' + costHtml + "</div>";
       const id = a.id;
-      if (!owned) {
+      if (!maxed) {
         row.addEventListener("click", () => {
           if (game.buyAugment(id)) {
             this.refresh(game);

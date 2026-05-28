@@ -183,7 +183,9 @@
           // overflow becomes loose ore that floats until you have room
           if (of > 0.0001) game.addPickup(hx, hy, gm * of, gc * of, gk * of);
         }
-        game.spawnSpark(hx, hy);
+        // veins flash + send ore to the ship; bare rock just throws dissipating dust
+        if (tot > 0) game.spawnSpark(hx, hy);
+        else game.spawnDust(hx, hy);
       } else {
         this.beam.x2 = sx + nx * range;
         this.beam.y2 = sy + ny * range;

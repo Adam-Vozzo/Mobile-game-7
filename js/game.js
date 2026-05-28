@@ -187,15 +187,19 @@
   };
 
   Game.prototype.buyAugment = function (id) {
-    if (Eco.ownsAugment(this.state, id)) return false;
     const def = Eco.augmentDef(id);
     if (!def || !Eco.augmentUnlocked(this.state, def)) return false; // special must be salvaged first
-    if (!Eco.canPay(this.state, def.cost)) return false;
-    Eco.pay(this.state, def.cost);
-    this.state.augments[id] = true;
+    const max = Eco.augmentMax(def);
+    const level = Eco.augmentLevel(this.state, id);
+    if (level >= max) return false; // already owned / fully upgraded
+    const cost = Eco.augmentTierCost(def, level);
+    if (!Eco.canPay(this.state, cost)) return false;
+    Eco.pay(this.state, cost);
+    this.state.augments[id] = max > 1 ? level + 1 : true;
     this.recomputeStats();
     G.UI.updateHUD(this);
-    G.UI.toast("Augment installed: " + def.name, 2600);
+    const ROM = ["I", "II", "III", "IV", "V"];
+    G.UI.toast("Augment installed: " + def.name + (max > 1 ? " · Lv " + ROM[Math.min(level, 4)] : ""), 2600);
     return true;
   };
 
@@ -329,6 +333,15 @@
     const a = Math.random() * TAU;
     const s = 20 + Math.random() * 40;
     this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.4 + Math.random() * 0.3, max: 0.7, c: COL.beam });
+  };
+  // Subtle rock debris kicked off while carving worthless rock — drifts + fades,
+  // never homes to the ship (nothing valuable was mined).
+  Game.prototype.spawnDust = function (x, y) {
+    if (this.particles.length > 260) return;
+    if (Math.random() > 0.5) return;
+    const a = Math.random() * TAU;
+    const s = 6 + Math.random() * 16;
+    this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.35 + Math.random() * 0.4, max: 1.2, c: COL.dim });
   };
   Game.prototype.spawnDeposit = function (x, y) {
     for (let i = 0; i < 4; i++) {
@@ -671,9 +684,16 @@
       shx = (Math.random() * 2 - 1) * 1.6;
       shy = (Math.random() * 2 - 1) * 1.6;
     }
+    // vein scanner reveal: researched augment level (or dev force = full range)
+    let scan = null;
+    const scanLvl = G.DEV.veinScanner ? 3 : this.stats.scannerLevel;
+    if (scanLvl > 0) {
+      scan = { px: this.player.x, py: this.player.y, range: G.DEV.veinScanner ? Infinity : this.stats.scannerRange };
+    }
+
     ctx.save();
     ctx.translate(shx, shy);
-    this.world.render(ctx, this.cam, iw, ih, this.time);
+    this.world.render(ctx, this.cam, iw, ih, this.time, scan);
     if (G.DEV.parallaxStars) this.drawParallax(ctx, iw, ih); // over terrain so it's visible
     this.drawWrecks(ctx, iw, ih);
     this.drawPickups(ctx, iw, ih);
@@ -695,6 +715,27 @@
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, iw, ih);
       ctx.restore();
+    }
+
+    // floodlight augment: warm pool of light around the ship, ramping in as you
+    // roam far from the core (so the dark depths stay readable). Drawn after the
+    // haze so it lights back through it.
+    if (this.stats.flashlight) {
+      const fc = CFG.flashlight;
+      const t = U.clamp((Math.hypot(this.player.x, this.player.y) / this.world.radius - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
+      if (t > 0.01) {
+        const sp = this.cam.worldToScreen(this.player.x, this.player.y, iw, ih);
+        const rad = Math.max(24, this.stats.flashRange * this.cam.scale);
+        const grd = ctx.createRadialGradient(sp.x, sp.y, rad * 0.05, sp.x, sp.y, rad);
+        grd.addColorStop(0, "rgba(255,214,150," + (0.4 * t).toFixed(3) + ")");
+        grd.addColorStop(0.5, "rgba(255,184,112," + (0.18 * t).toFixed(3) + ")");
+        grd.addColorStop(1, "rgba(255,170,100,0)");
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, iw, ih);
+        ctx.restore();
+      }
     }
 
     this.drawOverlay(ctx, iw, ih);

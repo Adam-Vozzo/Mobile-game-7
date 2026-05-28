@@ -56,6 +56,7 @@
     let laserPower = CFG.laser.power0 * (1 + 0.14 * L.laserPower) * D.mining;
     if (aug.laserStrength) laserPower *= 1.5;
     if (aug.overdrive) laserPower *= 2;
+    const scanLvl = Economy.augmentLevel(state, "veinScanner");
     return {
       influence: I,
       sqrtI: sI,
@@ -71,6 +72,10 @@
       baseRange: CFG.base.range0 * sI,
       energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.25 * L.energyCap) * (aug.reserveCells ? 1.4 : 1),
       recharge: CFG.player.energyRecharge * (1 + 0.35 * L.energyCap),
+      scannerLevel: scanLvl,
+      scannerRange: scanLvl > 0 ? (CFG.scanner.range0 + CFG.scanner.rangePerLevel * (scanLvl - 1)) * sI : 0,
+      flashlight: !!aug.flashlight,
+      flashRange: CFG.flashlight.range0 * sI,
     };
   };
 
@@ -122,6 +127,14 @@
     { id: "recharger", name: "Recharger", desc: "Slowly recharges your energy even away from base.", cost: { minerals: 280, crystals: 8 } },
     { id: "speed", name: "Afterburners", desc: "+30% ship speed and acceleration.", cost: { minerals: 200, crystals: 6 } },
     { id: "laserStrength", name: "Beam Amplifier", desc: "A thicker, stronger mining beam (+50% laser power).", cost: { minerals: 240, crystals: 7 } },
+    {
+      id: "veinScanner",
+      name: "Vein Scanner",
+      desc: "Reveals nearby ore on your scope — minerals, crystal, and catalyst veins. Each level widens the scan range.",
+      leveled: 3,
+      tiers: [{ cost: { minerals: 150, crystals: 4 } }, { cost: { minerals: 320, crystals: 9 } }, { cost: { minerals: 560, crystals: 16 } }],
+    },
+    { id: "flashlight", name: "Floodlight", desc: "A hull lamp that lights the dark automatically as you roam far from the core.", cost: { minerals: 200, crystals: 6 } },
     // special — recovered from wrecks
     { id: "phaseDrive", name: "Phase Drive", desc: "Fly through solid rock at full speed.", cost: { minerals: 600, crystals: 20, catalyst: 5 }, special: true },
     { id: "siphon", name: "Siphon Array", desc: "Pull loose ore to your ship from anywhere.", cost: { minerals: 500, crystals: 18, catalyst: 4 }, special: true },
@@ -138,6 +151,21 @@
   };
   Economy.augmentUnlocked = function (state, a) {
     return !a.special || !!(state.unlocked && state.unlocked[a.id]);
+  };
+  // Owned level of an augment (0 = none). Boolean augments read as 0/1; leveled
+  // augments store a count (old `true` saves coerce to level 1).
+  Economy.augmentLevel = function (state, id) {
+    const v = state.augments && state.augments[id];
+    if (!v) return 0;
+    return v === true ? 1 : v | 0;
+  };
+  Economy.augmentMax = function (a) {
+    return a.leveled || 1;
+  };
+  // Cost to buy the next level given the currently-owned level.
+  Economy.augmentTierCost = function (a, level) {
+    if (a.tiers) return a.tiers[Math.min(level, a.tiers.length - 1)].cost;
+    return a.cost;
   };
 
   // Dev slider metadata (gameplay tab). Multipliers stored on G.DEV.
@@ -194,7 +222,7 @@
     { key: "scanlines", name: "CRT Scanlines", desc: "Horizontal scanline overlay.", kind: "visual" },
     { key: "vignette", name: "Vignette", desc: "Darken the screen edges.", kind: "visual" },
     { key: "invertTerrain", name: "Invert Terrain Shade", desc: "Flip to light rock / dark space.", kind: "visual" },
-    { key: "veinScanner", name: "Vein Scanner", desc: "Tint terrain by mineral richness so veins glow.", kind: "visual" },
+    { key: "veinScanner", name: "Vein Scanner (force)", desc: "Force the vein scanner on at full range, even without the augment.", kind: "visual" },
     { key: "parallaxStars", name: "Parallax Stars", desc: "Drifting parallax starfield behind the core.", kind: "visual" },
     { key: "showFps", name: "Show FPS", desc: "Frame-time / FPS readout, top-left of the canvas.", kind: "visual" },
     { key: "botTargets", name: "Bot Targets", desc: "Draw a line from each bot to what it's mining.", kind: "visual" },

@@ -60,6 +60,7 @@
       massPerCell: 4,
       crystalPerCell: 0.6,
       catalystPerCell: 0.25,
+      veinRichCut: 0.35, // richness at/above this = a paying mineral vein (also what the scanner reveals)
       startPocket: 68,
       maxRenderCells: 160,
     },
@@ -113,6 +114,12 @@
     // ----- base / factory recharge -----
     base: { range0: 150 }, // recharge + interaction radius at influence 1 (* sqrtI)
     factory: { range0: 80, rechargeMult: 0.25 }, // factories recharge slower, shorter range
+
+    // ----- vein scanner augment (3 levels): reveal radius around the ship -----
+    scanner: { range0: 150, rangePerLevel: 175, samplepx: 6.5 }, // world units * sqrtI; samplepx = dot spacing target (screen px)
+
+    // ----- floodlight augment: auto-lit pool when far from the core -----
+    flashlight: { range0: 120, startFrac: 0.42, fullFrac: 0.7 }, // light radius (world * sqrtI); ramps in between these fractions of core radius
 
     // ----- economy: upgrade costs (geometric). catalyst gates Influence. -----
     cost: {
@@ -182,5 +189,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b20";
+  G.BUILD = "2026-05-28 · b21";
 })(window.G);
