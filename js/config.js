@@ -191,5 +191,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b22";
+  G.BUILD = "2026-05-28 · b23";
 })(window.G);
