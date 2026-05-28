@@ -49,7 +49,8 @@
     const L = state.levels;
     const D = G.DEV;
     const aug = state.augments || {};
-    const I = Economy.influenceValue(L.influence);
+    // Ship Class is descoped from normal play; a dev-only override drives it.
+    const I = Economy.influenceValue(D.shipClass | 0);
     const sI = Math.sqrt(I);
     const inf = CFG.influence;
     const spd = aug.speed ? 1.3 : 1;
@@ -170,6 +171,7 @@
 
   // Dev slider metadata (gameplay tab). Multipliers stored on G.DEV.
   Economy.DEV_SLIDERS = [
+    { key: "shipClass", name: "Ship Class (descoped)", min: 0, max: 4, step: 1, suffix: "" },
     { key: "gameSpeed", name: "Game Speed", min: 0.25, max: 4, step: 0.25, suffix: "x" },
     { key: "shipSpeed", name: "Ship Speed", min: 0.3, max: 2.5, step: 0.05 },
     { key: "turn", name: "Turn Rate", min: 0.4, max: 2.5, step: 0.05 },
@@ -186,7 +188,6 @@
       { id: "laserPower", name: "Laser Power", desc: "Carve veins faster." },
       { id: "cargo", name: "Cargo Hold", desc: "Carry more ore before you must return to deposit it." },
       { id: "energyCap", name: "Energy Capacity", desc: "More energy and a faster recharge." },
-      { id: "influence", name: "Ship Class", desc: "Refit your hull to a higher class — up to Class V. Scales you up and extends your reach. Forged from rare Catalyst.", max: 4 },
     ],
     structures: [
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },

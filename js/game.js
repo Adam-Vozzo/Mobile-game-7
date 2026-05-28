@@ -358,7 +358,7 @@
   // Ore mote that arcs into a mining bot as it receives minerals.
   Game.prototype.spawnBotCollect = function (x, y, bot) {
     if (this.particles.length > 320) return;
-    if (Math.random() > 0.3) return;
+    if (Math.random() > 0.85) return;
     this._mote(x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4, bot, 0, 0, COL.mineralDot);
   };
   // Ore mote that arcs from the ship into a base/factory while depositing.

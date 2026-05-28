@@ -78,7 +78,7 @@
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
-      depletedSpeed: 0.2, // movement multiplier at 0 energy (slowed 80%)
+      depletedSpeed: 0.5, // movement multiplier at 0 energy (slowed 50%)
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
     },
@@ -186,8 +186,10 @@
     gameSpeed: 1,
     pickupRange: 1,
     glide: 0.92,
+    // ship class is descoped from normal play (perf); dev-only override 0..4
+    shipClass: 0,
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b21";
+  G.BUILD = "2026-05-28 · b22";
 })(window.G);

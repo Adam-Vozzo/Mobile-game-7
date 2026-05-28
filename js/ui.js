@@ -176,7 +176,7 @@
     let defsKey;
     if (this.panel === "base") {
       this.renderTabs([{ id: "ship", name: "Ship" }, { id: "structures", name: "Structures" }], game);
-      this.el.sub.textContent = "Ship Class " + ROMAN[Math.min(s.levels.influence, 4)] + " (◎" + U.formatNum(game.stats.influence) + ")  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
+      this.el.sub.textContent = "Ship Class " + ROMAN[Math.min(G.DEV.shipClass | 0, 4)] + " (◎" + U.formatNum(game.stats.influence) + ")  ·  Core " + (game.world.carvedFraction() * 100).toFixed(1) + "%";
       defsKey = this.tab === "structures" ? "structures" : "ship";
     } else {
       this.renderTabs(null);
@@ -294,10 +294,11 @@
 
   UI._slider = function (game, sl) {
     const sfx = sl.suffix != null ? sl.suffix : "×";
+    const dec = sl.step >= 1 ? 0 : 2;
     const val = G.DEV[sl.key];
     const row = document.createElement("div");
     row.className = "slider";
-    row.innerHTML = '<div class="slider-top"><span class="slider-name">' + sl.name + '</span><span class="slider-val">' + val.toFixed(2) + sfx + "</span></div>";
+    row.innerHTML = '<div class="slider-top"><span class="slider-name">' + sl.name + '</span><span class="slider-val">' + val.toFixed(dec) + sfx + "</span></div>";
     const inp = document.createElement("input");
     inp.type = "range";
     inp.min = sl.min;
@@ -308,7 +309,7 @@
     inp.addEventListener("input", () => {
       const v = parseFloat(inp.value);
       game.setDevValue(sl.key, v);
-      valEl.textContent = v.toFixed(2) + sfx;
+      valEl.textContent = v.toFixed(dec) + sfx;
     });
     row.appendChild(inp);
     return row;

@@ -204,11 +204,18 @@
       hh = vh * 0.5;
 
     // Build the rock fill AND the marching-squares contour in ONE pass over the
-    // cell lattice. The fill is the union of every cell that touches rock, merged
-    // into horizontal rects (no per-cell polygons — that geometry is what was
-    // expensive). The crisp contour line is drawn just inside this fill, so the
-    // dark body and the glowing edge stay visually locked together (no background
-    // gap) at any zoom or screen width, while the fill stays cheap to build.
+    // cell lattice, sharing the cell reads + edge crossings so the dark fill and
+    // the glowing outline trace the same boundary (in sync at any zoom).
+    //   - Fully-solid cells always merge into run-length rects (cheap).
+    //   - Boundary cells: when the view is light enough (zoomed in / narrow
+    //     screen) we fill the exact solid sub-polygon so the dark body fits the
+    //     outline perfectly and thin nubs stay thin. On heavy views (wide /
+    //     whole-core) that costs too much to build+rasterize, so we fall back to
+    //     fast over-fill rects — the slight over-reach is invisible when each
+    //     cell is only a few pixels.
+    const aCells = Math.ceil((i1 - ci0) / step),
+      dCells = Math.ceil((j1 - cj0) / step);
+    const usePoly = aCells * dCells <= 6000;
     const rockPath = new Path2D();
     const cont = new Path2D();
     for (let j = cj0; j < j1; j += step) {
@@ -217,7 +224,7 @@
       const sj1 = hh + (this.worldY(jj) - camy) * scale;
       const rowH = sj1 - sj0;
       let runX0 = -1,
-        runX1 = -1; // horizontal run of rock-touching cells -> one merged rect
+        runX1 = -1; // horizontal run of filled cells -> one merged rect
       for (let i = ci0; i < i1; i += step) {
         const ii = Math.min(i + step, this.NX);
         const va = d[j * P + i],
@@ -231,20 +238,70 @@
         const mask = (c0 ? 1 : 0) | (c1 ? 2 : 0) | (c2 ? 4 : 0) | (c3 ? 8 : 0);
         const si0 = hw + (this.worldX(i) - camx) * scale;
         const si1 = hw + (this.worldX(ii) - camx) * scale;
-        // fill: any cell touching rock joins the run; an empty cell flushes it
-        if (mask !== 0) {
+        // fully-solid interior: extend the merged run, no edge to draw here
+        if (mask === 15) {
           if (runX0 < 0) runX0 = si0;
           runX1 = si1;
+          continue;
+        }
+        if (!usePoly) {
+          // over-fill: any rock-touching cell joins the run; empty cells flush it
+          if (mask !== 0) {
+            if (runX0 < 0) runX0 = si0;
+            runX1 = si1;
+          } else if (runX0 >= 0) {
+            rockPath.rect(runX0, sj0, runX1 - runX0, rowH);
+            runX0 = -1;
+          }
         } else if (runX0 >= 0) {
+          // poly: any non-full cell ends the run (boundary cells get a polygon)
           rockPath.rect(runX0, sj0, runX1 - runX0, rowH);
           runX0 = -1;
         }
-        // contour line(s) for boundary cells (interior & empty cells have none)
-        if (mask === 0 || mask === 15) continue;
+        if (mask === 0) continue;
+        // boundary cell: edge crossings shared by the fill polygon and the outline
         const tX = si0 + (si1 - si0) * ((T - va) / (vb - va));
         const rY = sj0 + (sj1 - sj0) * ((T - vb) / (vc - vb));
         const bX = si1 + (si0 - si1) * ((T - vc) / (vd - vc));
         const lY = sj1 + (sj0 - sj1) * ((T - vd) / (va - vd));
+        // exact fill: walk the solid corners + crossings clockwise around the cell
+        if (usePoly) {
+          let st = false;
+          if (c0) {
+            rockPath.moveTo(si0, sj0);
+            st = true;
+          }
+          if (c0 !== c1) {
+            if (st) rockPath.lineTo(tX, sj0);
+            else ((rockPath.moveTo(tX, sj0)), (st = true));
+          }
+          if (c1) {
+            if (st) rockPath.lineTo(si1, sj0);
+            else ((rockPath.moveTo(si1, sj0)), (st = true));
+          }
+          if (c1 !== c2) {
+            if (st) rockPath.lineTo(si1, rY);
+            else ((rockPath.moveTo(si1, rY)), (st = true));
+          }
+          if (c2) {
+            if (st) rockPath.lineTo(si1, sj1);
+            else ((rockPath.moveTo(si1, sj1)), (st = true));
+          }
+          if (c2 !== c3) {
+            if (st) rockPath.lineTo(bX, sj1);
+            else ((rockPath.moveTo(bX, sj1)), (st = true));
+          }
+          if (c3) {
+            if (st) rockPath.lineTo(si0, sj1);
+            else ((rockPath.moveTo(si0, sj1)), (st = true));
+          }
+          if (c3 !== c0) {
+            if (st) rockPath.lineTo(si0, lY);
+            else ((rockPath.moveTo(si0, lY)), (st = true));
+          }
+          if (st) rockPath.closePath();
+        }
+        // outline line(s) through this cell
         const crossed = [];
         if (c0 !== c1) crossed.push(tX, sj0);
         if (c1 !== c2) crossed.push(si1, rY);
@@ -353,17 +410,28 @@
           isCat = this.special[id];
         if (rich < cut && !isCry && !isCat) continue;
         const wx = this.worldX(i);
+        // Soft edge: solid near the ship, then thin out (spotty) and dim toward
+        // the rim, like the scan struggles to read deeper rock farther out.
+        let fade = 1;
         if (rng2 !== Infinity) {
           const dx = wx - px,
             dy = wy - py;
-          if (dx * dx + dy * dy > rng2) continue;
+          const dd2 = dx * dx + dy * dy;
+          if (dd2 > rng2) continue;
+          const t = Math.sqrt(dd2) / rng; // 0 at ship .. 1 at the rim
+          if (t > 0.45) {
+            fade = 1 - (t - 0.45) / 0.55; // 1 -> 0 across the outer band
+            // drop more dots the closer to the rim (per-cell stable -> no flicker)
+            if (U.hash2(i, j, this.seed + 23) > 0.12 + 0.88 * fade) continue;
+          }
         }
+        const dim = 0.3 + 0.7 * fade;
         const sx = (hw + (wx - camx) * scale) | 0;
         if (sx < -4 || sx > vw + 4) continue;
         if (isCat) {
           // catalyst: bright white sparkle that twinkles
           const tw = 0.55 + 0.45 * Math.sin(time * 5 + i * 2.3 + j * 1.7);
-          ctx.globalAlpha = 0.4 + 0.6 * tw;
+          ctx.globalAlpha = (0.4 + 0.6 * tw) * dim;
           ctx.fillStyle = COL.catalystDot;
           ctx.fillRect(sx, sy - 1, 1, 3);
           ctx.fillRect(sx - 1, sy, 3, 1);
@@ -375,14 +443,14 @@
           }
         } else if (isCry) {
           // crystal: pale vertical shard
-          ctx.globalAlpha = 0.5 + 0.4 * Math.min(1, rich + 0.3);
+          ctx.globalAlpha = (0.5 + 0.4 * Math.min(1, rich + 0.3)) * dim;
           ctx.fillStyle = COL.crystalDot;
           ctx.fillRect(sx, sy - 2, 1, 5);
           ctx.fillRect(sx - 1, sy, 1, 1);
           ctx.fillRect(sx + 1, sy, 1, 1);
         } else {
           // mineral: gold diamond, brighter with richness
-          ctx.globalAlpha = Math.min(0.9, 0.32 + rich * rich * 0.9);
+          ctx.globalAlpha = Math.min(0.9, 0.32 + rich * rich * 0.9) * dim;
           ctx.fillStyle = COL.mineralDot;
           ctx.fillRect(sx, sy - 1, 1, 1);
           ctx.fillRect(sx - 1, sy, 3, 1);

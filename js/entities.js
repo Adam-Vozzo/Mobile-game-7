@@ -345,48 +345,66 @@
       return;
     }
 
-    // DIG: head toward the nearest rich vein (or outward), pulsing the laser.
+    // DIG: travel to a rich vein (or out to the rock edge), then sit at the face
+    // and chip with a slow tap…turn…tap rhythm (deliberate, a little cute).
     this.retarget -= dt;
     if (!this.target || this.retarget <= 0) this._findVein(world, bstats);
     let desired;
     if (this.target) desired = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-    else desired = Math.atan2(this.y - home.y, this.x - home.x); // away from home
+    else desired = Math.atan2(this.y - home.y, this.x - home.x); // out, away from home
     this.heading = U.lerpAngle(this.heading, desired, Math.min(1, 2.5 * dt));
     const hx = Math.cos(this.heading),
       hy = Math.sin(this.heading);
 
-    // move (slow while digging); blocked by un-carved rock
-    const speed = bstats.botSpeed * 0.55;
-    this.vx = hx * speed;
-    this.vy = hy * speed;
-    const nx = this.x + this.vx * dt,
-      ny = this.y + this.vy * dt;
-    const blocked = world.densityAt(nx, ny) > T;
-    if (!blocked) {
-      this.x = nx;
-      this.y = ny;
+    // rock right in front of us to chip at?
+    const reach = bstats.botCarveR * 1.1;
+    const ax = this.x + hx * reach,
+      ay = this.y + hy * reach;
+    const rockAhead = world.densityAt(ax, ay) > T;
+    this.pulseT -= dt;
+
+    if (rockAhead) {
+      // sit at the face: ease to a stop, then tap on a slow timer
+      this.vx *= Math.pow(0.015, dt);
+      this.vy *= Math.pow(0.015, dt);
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (this.pulseT <= 0) {
+        this.pulseT = 0.42 + this.rng() * 0.3; // tap … pause … tap
+        const pm = game.pulseMult ? game.pulseMult() : 1;
+        const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower);
+        this.carry.m += got.minerals * yieldMult * pm;
+        this.carry.c += got.crystals * yieldMult * pm;
+        this.carry.k += got.catalyst * yieldMult * pm;
+        this.beamT = 0.16;
+        this.mineX = ax;
+        this.mineY = ay;
+        game.spawnSpark(ax, ay);
+        // veins: minerals visibly get sucked into the bot
+        if (got.minerals + got.crystals + got.catalyst > 0.01) {
+          game.spawnBotCollect(ax, ay, this);
+          game.spawnBotCollect(ax, ay, this);
+        }
+        // recoil kick + a little turn to face a fresh bit of rock
+        this.vx -= hx * bstats.botSpeed * 0.45;
+        this.vy -= hy * bstats.botSpeed * 0.45;
+        this.heading += (this.rng() - 0.5) * 0.9;
+      }
+    } else {
+      // travelling toward the vein / out to the edge
+      const speed = bstats.botSpeed * 0.6;
+      this.vx = hx * speed;
+      this.vy = hy * speed;
+      const nx = this.x + this.vx * dt,
+        ny = this.y + this.vy * dt;
+      if (world.densityAt(nx, ny) <= T) {
+        this.x = nx;
+        this.y = ny;
+      } else if (this.pulseT > 0.1) {
+        this.pulseT = 0.1; // nosed into a wall — chip it shortly
+      }
     }
     this.angle = this.heading;
-
-    // pulse the close-range laser to chip rock just ahead
-    this.pulseT -= dt;
-    const ax = this.x + hx * bstats.botCarveR * 1.1,
-      ay = this.y + hy * bstats.botCarveR * 1.1;
-    const rockAhead = world.densityAt(ax, ay) > T;
-    if (this.pulseT <= 0 && (rockAhead || blocked)) {
-      this.pulseT = 0.26;
-      const pm = game.pulseMult ? game.pulseMult() : 1;
-      const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower * 0.45);
-      this.carry.m += got.minerals * yieldMult * pm;
-      this.carry.c += got.crystals * yieldMult * pm;
-      this.carry.k += got.catalyst * yieldMult * pm;
-      this.beamT = 0.14;
-      this.mineX = ax;
-      this.mineY = ay;
-      game.spawnSpark(ax, ay);
-      if (got.minerals + got.crystals + got.catalyst > 0.01) game.spawnBotCollect(ax, ay, this);
-      this.heading += (this.rng() - 0.5) * 0.7; // little turn
-    }
     this.beam = this.beamT > 0;
 
     // return when full or roamed too far
