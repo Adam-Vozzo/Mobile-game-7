@@ -78,7 +78,8 @@
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
-      depletedSpeed: 0.5, // movement multiplier at 0 energy (slowed 50%)
+      depletedSpeed: 0.5, // movement multiplier while browned-out (slowed 50%)
+      brownoutRecover: 0.15, // exit brownout once energy climbs back to this fraction of max
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
     },
@@ -191,5 +192,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b23";
+  G.BUILD = "2026-05-28 · b24";
 })(window.G);

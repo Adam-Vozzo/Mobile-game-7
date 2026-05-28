@@ -620,6 +620,10 @@
       this._lastNearBase = this.player.nearBase;
       G.UI.setBuildEnabled(this.player.nearBase);
     }
+    if (this._lastBrownout !== this.player.brownout) {
+      this._lastBrownout = this.player.brownout;
+      if (G.UI.el && G.UI.el.hud) G.UI.el.hud.classList.toggle("brownout", this.player.brownout);
+    }
 
     this._secTimer += dt;
     if (this._secTimer >= 1) {
@@ -684,9 +688,10 @@
       shx = (Math.random() * 2 - 1) * 1.6;
       shy = (Math.random() * 2 - 1) * 1.6;
     }
-    // vein scanner reveal: researched augment level (or dev force = full range)
+    // vein scanner reveal: researched augment level (or dev force = full range).
+    // Powers down during a brownout (out of charge) — you go blind in the dark.
     let scan = null;
-    const scanLvl = G.DEV.veinScanner ? 3 : this.stats.scannerLevel;
+    const scanLvl = G.DEV.veinScanner ? 3 : this.player.brownout ? 0 : this.stats.scannerLevel;
     if (scanLvl > 0) {
       scan = { px: this.player.x, py: this.player.y, range: G.DEV.veinScanner ? Infinity : this.stats.scannerRange };
     }
@@ -719,8 +724,8 @@
 
     // floodlight augment: warm pool of light around the ship, ramping in as you
     // roam far from the core (so the dark depths stay readable). Drawn after the
-    // haze so it lights back through it.
-    if (this.stats.flashlight) {
+    // haze so it lights back through it. Goes dark during a brownout.
+    if (this.stats.flashlight && !this.player.brownout) {
       const fc = CFG.flashlight;
       const t = U.clamp((Math.hypot(this.player.x, this.player.y) / this.world.radius - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
       if (t > 0.01) {
@@ -1155,14 +1160,15 @@
     ctx.fillRect(cbx, by + (bh - cfh), bw, cfh);
     ctx.restore();
 
-    // augment compasses: arc + needle pointing to base / nearest catalyst
+    // augment compasses: arc + needle pointing to base / nearest catalyst.
+    // They power down during a brownout (out of charge).
     const owns = this.state.augments || {};
     const rc = r * 3.5; // pushed out so the arc clears the energy/cargo bars
-    if (owns.compass) {
+    if (owns.compass && !p.brownout) {
       const bs = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
       this._compass(ctx, sp.x, sp.y, rc, Math.atan2(bs.y - sp.y, bs.x - sp.x), COL.bright);
     }
-    if (owns.resonance && this.compassCatalyst) {
+    if (owns.resonance && !p.brownout && this.compassCatalyst) {
       const cs = cam.worldToScreen(this.compassCatalyst.x, this.compassCatalyst.y, iw, ih);
       this._compass(ctx, sp.x, sp.y, rc * 0.82, Math.atan2(cs.y - sp.y, cs.x - sp.x), COL.catalyst);
     }
@@ -1339,6 +1345,20 @@
       } else if (fpsEl.style.display !== "none") {
         fpsEl.style.display = "none";
       }
+    }
+    // power brownout (out of charge): dim the screen with a red, stuttering flicker
+    if (this.player.brownout) {
+      const t = this.time;
+      const flick = 0.5 + 0.32 * Math.sin(t * 23) + 0.18 * Math.sin(t * 61 + 1.3);
+      d.save();
+      d.fillStyle = "rgba(6,2,1," + (0.34 + 0.2 * flick).toFixed(3) + ")";
+      d.fillRect(0, 0, W, H);
+      const vg = d.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.22, W / 2, H / 2, Math.max(W, H) * 0.72);
+      vg.addColorStop(0, "rgba(255,40,30,0)");
+      vg.addColorStop(1, "rgba(255,40,30," + (0.1 + 0.12 * flick).toFixed(3) + ")");
+      d.fillStyle = vg;
+      d.fillRect(0, 0, W, H);
+      d.restore();
     }
     // slow top->bottom light sweep
     if (G.DEV.sweep) {

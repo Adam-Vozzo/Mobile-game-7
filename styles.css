@@ -65,6 +65,27 @@ body {
   gap: 5px;
   min-width: 44px;
 }
+/* out-of-charge brownout: the HUD stutters like it's losing power */
+#hud.brownout {
+  animation: hud-brownout 0.42s steps(2, end) infinite;
+}
+@keyframes hud-brownout {
+  0% {
+    opacity: 1;
+    filter: none;
+  }
+  40% {
+    opacity: 0.4;
+    filter: brightness(0.7) sepia(1) hue-rotate(-35deg) saturate(3);
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.55;
+    filter: brightness(0.8) sepia(1) hue-rotate(-35deg) saturate(2.5);
+  }
+}
 .ic {
   opacity: 0.95;
 }

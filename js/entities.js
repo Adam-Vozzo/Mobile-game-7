@@ -30,6 +30,7 @@
     this._trail = [];
     this.heat = 0;
     this.overheated = false;
+    this.brownout = false; // out of charge -> laser dead, augments dark, limp speed
   }
 
   // Free capacity, counting ore already credited + in flight + pending.
@@ -73,8 +74,14 @@
     this.inBase = this.nearBase;
     this.rechargeSource = src;
 
-    const depleted = !DEV.infiniteEnergy && this.energy <= 0;
-    const moveMult = depleted ? P.depletedSpeed : 1;
+    // Power brownout: at 0 energy the ship browns out and stays that way until
+    // it recharges "a little" (hysteresis), so the laser/augments don't strobe
+    // right at empty. The Recharger augment still works, so you can't soft-lock.
+    if (DEV.infiniteEnergy) this.brownout = false;
+    else if (this.energy <= 0) this.brownout = true;
+    else if (this.brownout && this.energy >= stats.energyMax * P.brownoutRecover) this.brownout = false;
+    const brownout = this.brownout;
+    const moveMult = brownout ? P.depletedSpeed : 1;
 
     // --- steering ---
     let thrust = 0;
@@ -120,7 +127,7 @@
 
     // --- mining laser (forward, or auto-aim to nearest rock) ---
     const pm = game.pulseMult ? game.pulseMult() : 1;
-    const laserBlocked = depleted || (DEV.laserHeat && this.overheated);
+    const laserBlocked = brownout || (DEV.laserHeat && this.overheated);
     let firing = false;
     if (!laserBlocked) {
       const range = stats.laserRange;
