@@ -312,7 +312,29 @@
   Game.prototype.setDevValue = function (key, val) {
     G.DEV[key] = val;
     this.recomputeStats();
+    // Debounce the save: dragging a slider fires many input events, and a full
+    // save base64-encodes the whole density grid — doing that per event made the
+    // sliders janky. Apply the value live; persist shortly after dragging stops.
+    clearTimeout(this._devSaveT);
+    this._devSaveT = setTimeout(() => G.Save.save(this), 400);
+  };
+
+  // Dev: switch terrain biome -> re-roll the core with the same seed so you can
+  // compare shapes/ore. Keeps progress; just regenerates and re-places wrecks.
+  Game.prototype.setBiome = function (id) {
+    if (!G.BIOMES || !G.BIOMES[id]) return;
+    G.DEV.biome = id;
+    this.world = new G.World((Math.random() * 1e9) >>> 0);
+    this.genWrecks();
+    this.player.x = 0;
+    this.player.y = 0;
+    this.player.vx = this.player.vy = 0;
+    this.recomputeStats();
+    this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.Save.save(this);
+    G.UI.updateHUD(this);
+    if (G.UI.open) G.UI.refresh(this);
+    G.UI.toast("Biome: " + id, 2200);
   };
 
   // Build menu (base) — works anywhere as long as you're within base range.
@@ -688,12 +710,13 @@
       shx = (Math.random() * 2 - 1) * 1.6;
       shy = (Math.random() * 2 - 1) * 1.6;
     }
-    // vein scanner reveal: researched augment level (or dev force = full range).
-    // Powers down during a brownout (out of charge) — you go blind in the dark.
+    // vein scanner reveal: everyone has a weak built-in scope; the augment widens
+    // it (dev force = full range). Powers down during a brownout (go blind).
     let scan = null;
-    const scanLvl = G.DEV.veinScanner ? 3 : this.player.brownout ? 0 : this.stats.scannerLevel;
-    if (scanLvl > 0) {
-      scan = { px: this.player.x, py: this.player.y, range: G.DEV.veinScanner ? Infinity : this.stats.scannerRange };
+    if (G.DEV.veinScanner) {
+      scan = { px: this.player.x, py: this.player.y, range: Infinity };
+    } else if (!this.player.brownout && this.stats.scannerRange > 0) {
+      scan = { px: this.player.x, py: this.player.y, range: this.stats.scannerRange };
     }
 
     ctx.save();

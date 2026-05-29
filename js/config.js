@@ -52,6 +52,7 @@
       threshold: 0.5,
       octaves: 4,
       noiseScale: 0.018,
+      densityBias: 0.62, // higher = more solid rock, lower = more open space
       richScale: 0.009,
       veinScale: 0.05,
       crystalVeinCut: 0.74, // crystal-bearing rock
@@ -60,7 +61,8 @@
       massPerCell: 4,
       crystalPerCell: 0.6,
       catalystPerCell: 0.25,
-      veinRichCut: 0.35, // richness at/above this = a paying mineral vein (also what the scanner reveals)
+      mineralValue: 8, // payout multiplier for rich mineral veins (rarer but richer)
+      veinRichCut: 0.58, // richness at/above this = a paying mineral vein (also what the scanner reveals)
       startPocket: 68,
       maxRenderCells: 160,
     },
@@ -78,6 +80,7 @@
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
+      rechargerFrac: 0.08, // Recharger augment: passive recharge = this * energyRecharge (away from base)
       depletedSpeed: 0.5, // movement multiplier while browned-out (slowed 50%)
       brownoutRecover: 0.15, // exit brownout once energy climbs back to this fraction of max
       energyLow: 0.1, // <=10% -> bar pulses red
@@ -105,6 +108,12 @@
       reachRays: 9, // rays cast to find a reachable rock face
       reachLen: 240, // ray length (world units, * sqrtI)
       retargetTime: 1.4,
+      // "cute" mining rhythm: hover off the face, fire/rotate a volley, relocate
+      standoff: 16, // gap (world units * sqrtI) the bot keeps between itself and the rock
+      shotGap: 0.34, // seconds between zaps in a volley
+      shotsMin: 3, // zaps fired at one spot before moving on
+      shotsMax: 6,
+      mineReach: 30, // how far ahead the mining beam carves from the bot (* sqrtI)
     },
 
     // ----- camera -----
@@ -117,8 +126,9 @@
     base: { range0: 150 }, // recharge + interaction radius at influence 1 (* sqrtI)
     factory: { range0: 80, rechargeMult: 0.25 }, // factories recharge slower, shorter range
 
-    // ----- vein scanner augment (3 levels): reveal radius around the ship -----
-    scanner: { range0: 150, rangePerLevel: 175, samplepx: 6.5 }, // world units * sqrtI; samplepx = dot spacing target (screen px)
+    // ----- vein scanner: a weak built-in scope; the augment (3 levels) widens it -----
+    // base0 = starter range with NO augment; range0 = augment L1; rangePerLevel = each level after.
+    scanner: { base0: 60, range0: 105, rangePerLevel: 95, samplepx: 6.5 }, // world units * sqrtI; samplepx = dot spacing target (screen px)
 
     // ----- floodlight augment: auto-lit pool when far from the core -----
     flashlight: { range0: 120, startFrac: 0.42, fullFrac: 0.7 }, // light radius (world * sqrtI); ramps in between these fractions of core radius
@@ -189,6 +199,8 @@
     corePulse: false,
     shipTrail: false,
     screenShake: false,
+    // terrain biome (dev): re-rolls the core's shape + ore. One at a time.
+    biome: "default", // default | caverns | dense | rich | barren | catalystRush
     // cheat toggles
     infiniteEnergy: false,
     magnet: false,
@@ -198,6 +210,7 @@
     allAugments: false,
     // slider multipliers (1 = default)
     shipSpeed: 1,
+    shipAccel: 1,
     turn: 1,
     mining: 1,
     botSpeed: 1,
@@ -210,6 +223,21 @@
     shipClass: 0,
   };
 
+  // Biome presets (dev): overrides merged onto world cfg at generation time so
+  // you can explore different terrain shapes + ore distributions.
+  G.BIOMES = {
+    default: {},
+    caverns: { densityBias: 0.5, noiseScale: 0.026 }, // open, swiss-cheese
+    dense: { densityBias: 0.74, noiseScale: 0.014 }, // mostly solid, tight tunnels
+    rich: { veinRichCut: 0.42, crystalVeinCut: 0.66 }, // veins everywhere
+    barren: { veinRichCut: 0.72, crystalVeinCut: 0.82, specialVeinCut: 0.93 }, // sparse ore
+    catalystRush: { specialVeinCut: 0.74, crystalVeinCut: 0.7 }, // lots of catalyst + crystal
+  };
+  G.biomeCfg = function () {
+    const b = (G.BIOMES && G.BIOMES[G.DEV.biome]) || null;
+    return b ? Object.assign({}, G.CFG.world, b) : G.CFG.world;
+  };
+
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b27";
+  G.BUILD = "2026-05-28 · b28";
 })(window.G);

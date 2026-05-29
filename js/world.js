@@ -34,9 +34,13 @@
   };
 
   World.prototype.generate = function () {
+    // Resolve biome overrides once and keep them as this.cfg, so carve() and the
+    // scanner read the same veinRichCut / mineralValue the terrain was built with.
+    this.cfg = G.biomeCfg ? G.biomeCfg() : this.cfg;
     const w = this.cfg,
       P = this.P,
       R = this.radius;
+    const bias = w.densityBias != null ? w.densityBias : 0.62;
     let solid = 0;
     for (let j = 0; j < P; j++) {
       const wy = this.worldY(j);
@@ -52,7 +56,7 @@
           continue;
         }
         const n = U.fbm(wx * w.noiseScale, wy * w.noiseScale, this.seed, w.octaves);
-        let d = 0.62 + (n - 0.5) * 0.95;
+        let d = bias + (n - 0.5) * 0.95;
         const edge = r / R;
         if (edge > 0.82) d = U.lerp(d, 1, (edge - 0.82) / 0.18);
         d = U.clamp(d, 0, 1);
@@ -125,11 +129,11 @@
         this.removedTotal += take;
         const rich = this.richness[id];
         // only mineral veins pay; bare rock below the vein cut yields nothing
-        // (vein-only mode). Otherwise a faint trickle from any rock.
+        // (vein-only mode). Veins are rarer now but much richer (mineralValue).
         if (G.DEV.veinOnly) {
-          if (rich >= w.veinRichCut) minerals += take * w.massPerCell * rich * rich * 2.8;
+          if (rich >= w.veinRichCut) minerals += take * w.massPerCell * rich * rich * w.mineralValue;
         } else {
-          minerals += take * w.massPerCell * (0.015 + rich * rich * 2.8);
+          minerals += take * w.massPerCell * (0.015 + rich * rich * w.mineralValue);
         }
         if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
         if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);

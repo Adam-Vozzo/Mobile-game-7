@@ -62,7 +62,7 @@
       influence: I,
       sqrtI: sI,
       playerRadius: CFG.player.radius0 * sI,
-      accel: CFG.player.accel * sI * D.shipSpeed * spd,
+      accel: CFG.player.accel * sI * D.shipAccel * spd,
       maxSpeed: CFG.player.maxSpeed * sI * D.shipSpeed * spd,
       turnRate: CFG.player.turnRate * D.turn,
       laserPower: laserPower,
@@ -74,7 +74,9 @@
       energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.25 * L.energyCap) * (owns("reserveCells") ? 1.4 : 1),
       recharge: CFG.player.energyRecharge * (1 + 0.35 * L.energyCap),
       scannerLevel: scanLvl,
-      scannerRange: scanLvl > 0 ? (CFG.scanner.range0 + CFG.scanner.rangePerLevel * (scanLvl - 1)) * sI : 0,
+      // Everyone starts with a weak built-in scope (base0). Each augment level
+      // widens it, but the per-level gain is modest now.
+      scannerRange: (scanLvl > 0 ? CFG.scanner.range0 + CFG.scanner.rangePerLevel * (scanLvl - 1) : CFG.scanner.base0) * sI,
       flashlight: owns("flashlight"),
       flashRange: CFG.flashlight.range0 * sI,
     };
@@ -183,6 +185,7 @@
     { key: "shipClass", name: "Ship Class (descoped)", min: 0, max: 4, step: 1, suffix: "" },
     { key: "gameSpeed", name: "Game Speed", min: 0.25, max: 4, step: 0.25, suffix: "x" },
     { key: "shipSpeed", name: "Ship Speed", min: 0.3, max: 2.5, step: 0.05 },
+    { key: "shipAccel", name: "Ship Acceleration", min: 0.3, max: 3, step: 0.05 },
     { key: "turn", name: "Turn Rate", min: 0.4, max: 2.5, step: 0.05 },
     { key: "mining", name: "Mining Power", min: 0.3, max: 4, step: 0.1 },
     { key: "botSpeed", name: "Bot Speed", min: 0.3, max: 3, step: 0.05 },

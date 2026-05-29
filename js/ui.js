@@ -268,6 +268,7 @@
     }
 
     if (this.tab === "gameplay") {
+      list.appendChild(this._biomeRow(game));
       for (const sl of Eco.DEV_SLIDERS) list.appendChild(this._slider(game, sl));
     }
     const kind = this.tab === "gameplay" ? "gameplay" : this.tab === "visual" ? "visual" : "cheat";
@@ -275,6 +276,37 @@
       if (def.kind !== kind) continue;
       list.appendChild(this._toggleRow(game, def));
     }
+  };
+
+  // Biome picker (dev): chips that re-roll the terrain. Re-rolls the core, so
+  // it's labelled as wiping the current dig.
+  UI._BIOMES = [
+    { id: "default", name: "Default" },
+    { id: "caverns", name: "Caverns" },
+    { id: "dense", name: "Dense Rock" },
+    { id: "rich", name: "Rich Fields" },
+    { id: "barren", name: "Barren" },
+    { id: "catalystRush", name: "Catalyst Rush" },
+  ];
+  UI._biomeRow = function (game) {
+    const row = document.createElement("div");
+    row.className = "slider";
+    row.innerHTML = '<div class="slider-top"><span class="slider-name">Terrain Biome</span><span class="slider-val">re-rolls the core</span></div>';
+    const wrap = document.createElement("div");
+    wrap.className = "biome-chips";
+    for (const b of UI._BIOMES) {
+      const chip = document.createElement("button");
+      chip.className = "biome-chip" + (G.DEV.biome === b.id ? " active" : "");
+      chip.textContent = b.name;
+      const id = b.id;
+      chip.addEventListener("click", () => {
+        game.setBiome(id);
+        this.refresh(game);
+      });
+      wrap.appendChild(chip);
+    }
+    row.appendChild(wrap);
+    return row;
   };
 
   UI._toggleRow = function (game, def) {

@@ -348,7 +348,7 @@
     } else if (src) {
       this.energy += rate * DEV.recharge * dt;
     } else {
-      if (owns("recharger")) this.energy += stats.recharge * 0.22 * dt; // passive recharge away from base
+      if (owns("recharger")) this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // weak passive recharge away from base
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
       this.energy -= augDrain * dt;
@@ -375,7 +375,10 @@
     this.carry = { m: 0, c: 0, k: 0 };
     this.target = null; // a rich cell to dig toward
     this.retarget = this.rng() * CFG.bot.retargetTime;
-    this.pulseT = this.rng() * 0.26;
+    this.phase = "travel"; // travel -> mine (fire/rotate volley) -> back to travel
+    this.pulseT = 0; // time until next zap while mining
+    this.shots = 0; // zaps fired at the current spot
+    this.shotGoal = 0; // zaps to fire here before relocating
     this.beamT = 0; // >0 while a pulse beam is visible
     this.mineX = x;
     this.mineY = y;
@@ -449,66 +452,108 @@
       return;
     }
 
-    // DIG: travel to a rich vein (or out to the rock edge), then sit at the face
-    // and chip with a slow tap…turn…tap rhythm (deliberate, a little cute).
+    // DIG: find a vein, fly over, stop a little short of the rock, then fire /
+    // rotate / fire a short volley before darting to another spot (cute rhythm).
+    const bot = CFG.bot;
+    const standoff = bot.standoff * bstats.sqrtI;
+    const mineReach = bot.mineReach * bstats.sqrtI;
     this.retarget -= dt;
-    if (!this.target || this.retarget <= 0) this._findVein(world, bstats);
-    let desired;
-    if (this.target) desired = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-    else desired = Math.atan2(this.y - home.y, this.x - home.x); // out, away from home
-    this.heading = U.lerpAngle(this.heading, desired, Math.min(1, 2.5 * dt));
-    const hx = Math.cos(this.heading),
-      hy = Math.sin(this.heading);
+    if (!this.target || (this.phase === "travel" && this.retarget <= 0)) this._findVein(world, bstats);
 
-    // rock right in front of us to chip at?
-    const reach = bstats.botCarveR * 1.1;
-    const ax = this.x + hx * reach,
-      ay = this.y + hy * reach;
-    const rockAhead = world.densityAt(ax, ay) > T;
-    this.pulseT -= dt;
-
-    if (rockAhead) {
-      // sit at the face: ease to a stop, then tap on a slow timer
-      this.vx *= Math.pow(0.015, dt);
-      this.vy *= Math.pow(0.015, dt);
+    if (this.phase === "travel") {
+      // head toward the target vein (or outward if none found)
+      let tx, ty;
+      if (this.target) {
+        tx = this.target.x;
+        ty = this.target.y;
+      } else {
+        const outA = Math.atan2(this.y - home.y, this.x - home.x);
+        tx = this.x + Math.cos(outA) * 120;
+        ty = this.y + Math.sin(outA) * 120;
+      }
+      const desired = Math.atan2(ty - this.y, tx - this.x);
+      this.heading = U.lerpAngle(this.heading, desired, Math.min(1, 4 * dt));
+      const hx = Math.cos(this.heading),
+        hy = Math.sin(this.heading);
+      const speed = bstats.botSpeed * 0.85;
+      // probe the rock face ahead; stop once it's within standoff distance
+      const faceDist = this._faceAhead(world, hx, hy, standoff + mineReach);
+      if (faceDist >= 0 && faceDist <= standoff + 2) {
+        // arrived at a face -> settle into a mining volley here
+        this.vx *= Math.pow(0.0001, dt);
+        this.vy *= Math.pow(0.0001, dt);
+        this.phase = "mine";
+        this.shots = 0;
+        this.shotGoal = bot.shotsMin + Math.floor(this.rng() * (bot.shotsMax - bot.shotsMin + 1));
+        this.pulseT = 0.12;
+      } else {
+        const nx = this.x + hx * speed * dt,
+          ny = this.y + hy * speed * dt;
+        if (world.densityAt(nx, ny) <= T) {
+          this.x = nx;
+          this.y = ny;
+          this.vx = hx * speed;
+          this.vy = hy * speed;
+        } else {
+          // bumped rock before reaching standoff -> mine from right here
+          this.phase = "mine";
+          this.shots = 0;
+          this.shotGoal = bot.shotsMin + Math.floor(this.rng() * (bot.shotsMax - bot.shotsMin + 1));
+          this.pulseT = 0.12;
+        }
+        // give up on an unreachable target after a while
+        if (this.retarget <= -bot.retargetTime) this.target = null;
+      }
+      this.angle = this.heading;
+    } else {
+      // MINE: hold position, fire a zap, rotate a touch, fire again…
+      this.vx *= Math.pow(0.0001, dt);
+      this.vy *= Math.pow(0.0001, dt);
       this.x += this.vx * dt;
       this.y += this.vy * dt;
+      this.pulseT -= dt;
       if (this.pulseT <= 0) {
-        this.pulseT = 0.42 + this.rng() * 0.3; // tap … pause … tap
-        const pm = game.pulseMult ? game.pulseMult() : 1;
-        const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower);
-        this.carry.m += got.minerals * yieldMult * pm;
-        this.carry.c += got.crystals * yieldMult * pm;
-        this.carry.k += got.catalyst * yieldMult * pm;
-        this.beamT = 0.16;
-        this.mineX = ax;
-        this.mineY = ay;
-        game.spawnSpark(ax, ay);
-        // veins: minerals visibly get sucked into the bot
-        if (got.minerals + got.crystals + got.catalyst > 0.01) {
-          game.spawnBotCollect(ax, ay, this);
-          game.spawnBotCollect(ax, ay, this);
+        this.pulseT = bot.shotGap;
+        const hx = Math.cos(this.heading),
+          hy = Math.sin(this.heading);
+        // carve at the rock face along the heading (find first solid point)
+        let cd = -1;
+        for (let dd = bstats.botCarveR; dd <= standoff + mineReach; dd += 4) {
+          if (world.densityAt(this.x + hx * dd, this.y + hy * dd) > T) {
+            cd = dd;
+            break;
+          }
         }
-        // recoil kick + a little turn to face a fresh bit of rock
-        this.vx -= hx * bstats.botSpeed * 0.45;
-        this.vy -= hy * bstats.botSpeed * 0.45;
-        this.heading += (this.rng() - 0.5) * 0.9;
+        if (cd >= 0) {
+          const ax = this.x + hx * cd,
+            ay = this.y + hy * cd;
+          const pm = game.pulseMult ? game.pulseMult() : 1;
+          const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower);
+          this.carry.m += got.minerals * yieldMult * pm;
+          this.carry.c += got.crystals * yieldMult * pm;
+          this.carry.k += got.catalyst * yieldMult * pm;
+          this.beamT = 0.18;
+          this.mineX = ax;
+          this.mineY = ay;
+          game.spawnSpark(ax, ay);
+          if (got.minerals + got.crystals + got.catalyst > 0.01) {
+            game.spawnBotCollect(ax, ay, this);
+            game.spawnBotCollect(ax, ay, this);
+          }
+        }
+        this.shots++;
+        // rotate a little to aim at a fresh bit of rock for the next zap
+        this.heading += (this.rng() - 0.5) * 0.7;
+        if (this.shots >= this.shotGoal) {
+          // done here -> go find another spot
+          this.phase = "travel";
+          this.target = null;
+          this.retarget = bot.retargetTime;
+          this.heading += (this.rng() - 0.5) * 1.6; // peel away
+        }
       }
-    } else {
-      // travelling toward the vein / out to the edge
-      const speed = bstats.botSpeed * 0.6;
-      this.vx = hx * speed;
-      this.vy = hy * speed;
-      const nx = this.x + this.vx * dt,
-        ny = this.y + this.vy * dt;
-      if (world.densityAt(nx, ny) <= T) {
-        this.x = nx;
-        this.y = ny;
-      } else if (this.pulseT > 0.1) {
-        this.pulseT = 0.1; // nosed into a wall — chip it shortly
-      }
+      this.angle = this.heading;
     }
-    this.angle = this.heading;
     this.beam = this.beamT > 0;
 
     // return when full or roamed too far
@@ -516,7 +561,16 @@
     const off = this.x * this.x + this.y * this.y > world.radius * world.radius;
     if (this.carry.m + this.carry.c + this.carry.k >= cap || U.dist(this.x, this.y, home.x, home.y) > bstats.botReach || off) {
       this.mode = "return";
+      this.phase = "travel";
     }
+  };
+
+  // Distance to the first solid rock along (hx,hy), up to maxd; -1 if none.
+  Bot.prototype._faceAhead = function (world, hx, hy, maxd) {
+    for (let dd = 0; dd <= maxd; dd += 4) {
+      if (world.densityAt(this.x + hx * dd, this.y + hy * dd) > T) return dd;
+    }
+    return -1;
   };
 
   // ---------------- Factory (each upgrades its own bots) ----------------
