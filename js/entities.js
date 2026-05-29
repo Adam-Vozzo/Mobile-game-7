@@ -4,6 +4,7 @@
   "use strict";
   const U = G.util;
   const CFG = G.CFG;
+  const Eco = G.Economy;
   const T = CFG.world.threshold;
 
   // ---------------- Player ----------------
@@ -113,7 +114,7 @@
   Player.prototype.update = function (dt, input, stats, world, game) {
     const P = CFG.player;
     const DEV = G.DEV;
-    const aug = game.state.augments || {};
+    const owns = (id) => Eco.ownsAugment(game.state, id);
     const base = game.base;
     this.maxEnergy = stats.energyMax;
     this.maxCargo = stats.cargoCapacity;
@@ -169,7 +170,7 @@
       ny = Math.sin(this.angle);
     const dens = world.densityAt(this.x, this.y);
     // center in solid terrain => slow, unless Hull Plating / Phase Drive
-    const rockMult = dens > T ? (aug.phaseDrive ? 1 : aug.hullPlating ? 0.35 : 0.1) : 1;
+    const rockMult = dens > T ? (owns("phaseDrive") ? 1 : owns("hullPlating") ? 0.35 : 0.1) : 1;
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
@@ -201,9 +202,9 @@
     // augment can also be forced on via a dev gameplay toggle (to explore combos).
     const pm = game.pulseMult ? game.pulseMult() : 1;
     const laserBlocked = brownout || (DEV.laserHeat && this.overheated);
-    const fAuto = aug.autoTarget || DEV.autoAim || DEV.laserAuto;
-    const fTwin = aug.twinBeams || DEV.laserTwin;
-    const fBurst = aug.burstFire || DEV.laserBurst;
+    const fAuto = owns("autoTarget") || DEV.autoAim || DEV.laserAuto;
+    const fTwin = owns("twinBeams") || DEV.laserTwin;
+    const fBurst = owns("burstFire") || DEV.laserBurst;
     let firing = false;
     this.beams.length = 0;
     if (!laserBlocked) {
@@ -290,7 +291,7 @@
     // --- deposit cargo gradually at base/factory (motes flow ship -> source) ---
     const load = this.cargo.m + this.cargo.c + this.cargo.k;
     if (src && load > 0) {
-      const take = Math.min(load, (this.maxCargo + 24) * (aug.tractor ? 2 : 1) * dt); // ~1s (0.5s with Tractor)
+      const take = Math.min(load, (this.maxCargo + 24) * (owns("tractor") ? 2 : 1) * dt); // ~1s (0.5s with Tractor)
       const f = take / load;
       const dm = this.cargo.m * f,
         dc = this.cargo.c * f,
@@ -312,7 +313,7 @@
     } else if (src) {
       this.energy += rate * DEV.recharge * dt;
     } else {
-      if (aug.recharger) this.energy += stats.recharge * 0.22 * dt; // passive recharge away from base
+      if (owns("recharger")) this.energy += stats.recharge * 0.22 * dt; // passive recharge away from base
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
     }

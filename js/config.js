@@ -180,6 +180,7 @@
     autoAim: false,
     instantBots: false,
     noCargoLimit: false,
+    allAugments: false,
     // slider multipliers (1 = default)
     shipSpeed: 1,
     turn: 1,
@@ -195,5 +196,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b25";
+  G.BUILD = "2026-05-28 · b26";
 })(window.G);

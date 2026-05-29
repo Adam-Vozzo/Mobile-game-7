@@ -48,15 +48,15 @@
   Economy.derive = function (state) {
     const L = state.levels;
     const D = G.DEV;
-    const aug = state.augments || {};
+    const owns = (id) => Economy.ownsAugment(state, id);
     // Ship Class is descoped from normal play; a dev-only override drives it.
     const I = Economy.influenceValue(D.shipClass | 0);
     const sI = Math.sqrt(I);
     const inf = CFG.influence;
-    const spd = aug.speed ? 1.3 : 1;
+    const spd = owns("speed") ? 1.3 : 1;
     let laserPower = CFG.laser.power0 * (1 + 0.14 * L.laserPower) * D.mining;
-    if (aug.laserStrength) laserPower *= 1.5;
-    if (aug.overdrive) laserPower *= 2;
+    if (owns("laserStrength")) laserPower *= 1.5;
+    if (owns("overdrive")) laserPower *= 2;
     const scanLvl = Economy.augmentLevel(state, "veinScanner");
     return {
       influence: I,
@@ -71,11 +71,11 @@
       yield: CFG.laser.yield0 * (state.yieldMult || 1),
       cargoCapacity: CFG.player.cargo0 * sI * (1 + 0.6 * L.cargo),
       baseRange: CFG.base.range0 * sI,
-      energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.25 * L.energyCap) * (aug.reserveCells ? 1.4 : 1),
+      energyMax: CFG.player.maxEnergy0 * sI * (1 + 0.25 * L.energyCap) * (owns("reserveCells") ? 1.4 : 1),
       recharge: CFG.player.energyRecharge * (1 + 0.35 * L.energyCap),
       scannerLevel: scanLvl,
       scannerRange: scanLvl > 0 ? (CFG.scanner.range0 + CFG.scanner.rangePerLevel * (scanLvl - 1)) * sI : 0,
-      flashlight: !!aug.flashlight,
+      flashlight: owns("flashlight"),
       flashRange: CFG.flashlight.range0 * sI,
     };
   };
@@ -149,17 +149,22 @@
   Economy.SPECIAL_AUGMENTS = ["phaseDrive", "siphon", "overdrive", "autoTarget", "twinBeams", "burstFire"];
 
   Economy.ownsAugment = function (state, id) {
-    return !!(state.augments && state.augments[id]);
+    return G.DEV.allAugments || !!(state.augments && state.augments[id]);
   };
   Economy.augmentDef = function (id) {
     return Economy.AUGMENTS.find((a) => a.id === id);
   };
   Economy.augmentUnlocked = function (state, a) {
-    return !a.special || !!(state.unlocked && state.unlocked[a.id]);
+    return G.DEV.allAugments || !a.special || !!(state.unlocked && state.unlocked[a.id]);
   };
   // Owned level of an augment (0 = none). Boolean augments read as 0/1; leveled
-  // augments store a count (old `true` saves coerce to level 1).
+  // augments store a count (old `true` saves coerce to level 1). The Unlock-All
+  // cheat reads every augment at its max level.
   Economy.augmentLevel = function (state, id) {
+    if (G.DEV.allAugments) {
+      const a = Economy.augmentDef(id);
+      return a ? Economy.augmentMax(a) : 1;
+    }
     const v = state.augments && state.augments[id];
     if (!v) return 0;
     return v === true ? 1 : v | 0;
@@ -246,6 +251,7 @@
     { key: "autoAim", name: "Auto-Aim Laser", desc: "Laser targets the nearest rock automatically.", kind: "cheat" },
     { key: "instantBots", name: "Instant Bots", desc: "Factories assemble bots almost instantly.", kind: "cheat" },
     { key: "noCargoLimit", name: "No Cargo Limit", desc: "Carry unlimited ore.", kind: "cheat" },
+    { key: "allAugments", name: "Unlock All Augments", desc: "Every augment (including salvaged laser mods) reads as installed — effects on, shipyard shows them owned. Turn off to revert to what you've really earned.", kind: "cheat" },
   ];
 
   G.Economy = Economy;

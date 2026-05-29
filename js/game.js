@@ -455,7 +455,7 @@
 
   Game.prototype.updatePickups = function (dt) {
     const pl = this.player;
-    const siphon = this.state.augments && this.state.augments.siphon;
+    const siphon = Eco.ownsAugment(this.state, "siphon");
     const range = CFG.pickup.pullRange * this.stats.sqrtI * G.DEV.pickupRange;
     const r2 = siphon ? Infinity : range * range;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
@@ -1039,7 +1039,7 @@
     const beams = this.player.beams;
     if (!beams || !beams.length) return;
     const cam = this.cam;
-    const thick = G.DEV.thickBeam || (this.state.augments && this.state.augments.laserStrength);
+    const thick = G.DEV.thickBeam || Eco.ownsAugment(this.state, "laserStrength");
     const pr = 2 + Math.abs(Math.sin(this.time * 30)) * 0.8;
     ctx.save();
     ctx.strokeStyle = COL.beam;
@@ -1115,10 +1115,9 @@
     }
     // equipped laser-mod emitters, shown on the hull (owned or dev-forced)
     if (!p.brownout) {
-      const la = this.state.augments || {};
-      const eTwin = la.twinBeams || G.DEV.laserTwin;
-      const eAuto = la.autoTarget || G.DEV.autoAim || G.DEV.laserAuto;
-      const eBurst = la.burstFire || G.DEV.laserBurst;
+      const eTwin = Eco.ownsAugment(this.state, "twinBeams") || G.DEV.laserTwin;
+      const eAuto = Eco.ownsAugment(this.state, "autoTarget") || G.DEV.autoAim || G.DEV.laserAuto;
+      const eBurst = Eco.ownsAugment(this.state, "burstFire") || G.DEV.laserBurst;
       if (eTwin || eAuto || eBurst) {
         ctx.shadowColor = COL.beam;
         ctx.shadowBlur = CFG.render.glow ? gb(2) : 0;
@@ -1199,13 +1198,13 @@
 
     // augment compasses: arc + needle pointing to base / nearest catalyst.
     // They power down during a brownout (out of charge).
-    const owns = this.state.augments || {};
+    const owns = (id) => Eco.ownsAugment(this.state, id);
     const rc = r * 3.5; // pushed out so the arc clears the energy/cargo bars
-    if (owns.compass && !p.brownout) {
+    if (owns("compass") && !p.brownout) {
       const bs = cam.worldToScreen(this.base.x, this.base.y, iw, ih);
       this._compass(ctx, sp.x, sp.y, rc, Math.atan2(bs.y - sp.y, bs.x - sp.x), COL.bright);
     }
-    if (owns.resonance && !p.brownout && this.compassCatalyst) {
+    if (owns("resonance") && !p.brownout && this.compassCatalyst) {
       const cs = cam.worldToScreen(this.compassCatalyst.x, this.compassCatalyst.y, iw, ih);
       this._compass(ctx, sp.x, sp.y, rc * 0.82, Math.atan2(cs.y - sp.y, cs.x - sp.x), COL.catalyst);
     }
