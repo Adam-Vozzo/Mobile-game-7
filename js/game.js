@@ -1036,25 +1036,31 @@
   };
 
   Game.prototype.drawBeam = function (ctx, iw, ih) {
-    const b = this.player.beam;
-    if (!b.active) return;
+    const beams = this.player.beams;
+    if (!beams || !beams.length) return;
     const cam = this.cam;
-    const a = cam.worldToScreen(b.x1, b.y1, iw, ih);
-    const c = cam.worldToScreen(b.x2, b.y2, iw, ih);
     const thick = G.DEV.thickBeam || (this.state.augments && this.state.augments.laserStrength);
+    const pr = 2 + Math.abs(Math.sin(this.time * 30)) * 0.8;
     ctx.save();
     ctx.strokeStyle = COL.beam;
     ctx.lineWidth = thick ? 3 : 1;
     ctx.shadowColor = COL.beam;
     ctx.shadowBlur = gb(thick ? 5 : 3);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(c.x, c.y);
-    ctx.stroke();
+    for (let i = 0; i < beams.length; i++) {
+      const a = cam.worldToScreen(beams[i].x1, beams[i].y1, iw, ih);
+      const c = cam.worldToScreen(beams[i].x2, beams[i].y2, iw, ih);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.stroke();
+    }
     ctx.fillStyle = COL.player;
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, 2 + Math.abs(Math.sin(this.time * 30)) * 0.8, 0, TAU);
-    ctx.fill();
+    for (let i = 0; i < beams.length; i++) {
+      const c = cam.worldToScreen(beams[i].x2, beams[i].y2, iw, ih);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, pr, 0, TAU);
+      ctx.fill();
+    }
     ctx.restore();
   };
 
@@ -1106,6 +1112,37 @@
       ctx.moveTo(-r * 0.5, 0);
       ctx.lineTo(-r - r * 1.3 * p.thrusting * (0.7 + Math.random() * 0.6), 0);
       ctx.stroke();
+    }
+    // equipped laser-mod emitters, shown on the hull (owned or dev-forced)
+    if (!p.brownout) {
+      const la = this.state.augments || {};
+      const eTwin = la.twinBeams || G.DEV.laserTwin;
+      const eAuto = la.autoTarget || G.DEV.autoAim || G.DEV.laserAuto;
+      const eBurst = la.burstFire || G.DEV.laserBurst;
+      if (eTwin || eAuto || eBurst) {
+        ctx.shadowColor = COL.beam;
+        ctx.shadowBlur = CFG.render.glow ? gb(2) : 0;
+        ctx.fillStyle = COL.beam;
+        ctx.strokeStyle = COL.beam;
+        ctx.lineWidth = 1;
+        if (eTwin) {
+          const s = Math.max(1, r * 0.22);
+          ctx.fillRect(r * 0.2 - s / 2, r * 0.5 - s / 2, s, s);
+          ctx.fillRect(r * 0.2 - s / 2, -r * 0.5 - s / 2, s, s);
+        }
+        if (eBurst) {
+          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 12);
+          ctx.beginPath();
+          ctx.arc(-r * 0.1, 0, Math.max(1, r * 0.18), 0, TAU);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        if (eAuto) {
+          ctx.beginPath();
+          ctx.arc(r * 0.95, 0, Math.max(1.5, r * 0.34), 0, TAU);
+          ctx.stroke();
+        }
+      }
     }
     ctx.restore();
 

@@ -142,7 +142,7 @@
     pickup: { pullRange: 95, mergeRange: 16, maxCount: 90, chunk: 0.22 },
 
     // ----- buried wrecks to salvage (unlock special augments) -----
-    wreck: { count: 8, salvageRange: 60, reward: { minerals: 400, crystals: 30, catalyst: 6 } },
+    wreck: { count: 12, salvageRange: 60, reward: { minerals: 400, crystals: 30, catalyst: 6 } },
 
     // ----- misc -----
     save: { key: "coreforge.save.v2", interval: 8 },
@@ -167,6 +167,9 @@
     depthHaze: false,
     // gameplay toggles
     veinOnly: true,
+    laserAuto: false,
+    laserTwin: false,
+    laserBurst: false,
     laserHeat: false,
     corePulse: false,
     shipTrail: false,
@@ -192,5 +195,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b24";
+  G.BUILD = "2026-05-28 · b25";
 })(window.G);

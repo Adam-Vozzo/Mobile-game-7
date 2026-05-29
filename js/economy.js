@@ -140,9 +140,13 @@
     { id: "phaseDrive", name: "Phase Drive", desc: "Fly through solid rock at full speed.", cost: { minerals: 600, crystals: 20, catalyst: 5 }, special: true },
     { id: "siphon", name: "Siphon Array", desc: "Pull loose ore to your ship from anywhere.", cost: { minerals: 500, crystals: 18, catalyst: 4 }, special: true },
     { id: "overdrive", name: "Overdrive Core", desc: "+100% mining power.", cost: { minerals: 700, crystals: 24, catalyst: 6 }, special: true },
+    // special laser mods — stack & combine (e.g. Targeting Array + Twin locks two veins)
+    { id: "autoTarget", name: "Targeting Array", desc: "Your mining laser locks the nearest rock automatically — no aiming.", cost: { minerals: 520, crystals: 18, catalyst: 4 }, special: true },
+    { id: "twinBeams", name: "Twin Emitters", desc: "Fire two mining beams at once — wider clears, or two veins together.", cost: { minerals: 620, crystals: 20, catalyst: 5 }, special: true },
+    { id: "burstFire", name: "Pulse Driver", desc: "Fire in hard rhythmic bursts — far stronger while pulsing, and easy on energy.", cost: { minerals: 680, crystals: 22, catalyst: 6 }, special: true },
   ];
-  // Special augment ids in wreck-type order.
-  Economy.SPECIAL_AUGMENTS = ["phaseDrive", "siphon", "overdrive"];
+  // Special augment ids in wreck-type order (each wreck unlocks one).
+  Economy.SPECIAL_AUGMENTS = ["phaseDrive", "siphon", "overdrive", "autoTarget", "twinBeams", "burstFire"];
 
   Economy.ownsAugment = function (state, id) {
     return !!(state.augments && state.augments[id]);
@@ -230,6 +234,9 @@
     { key: "thickBeam", name: "Thick Beam", desc: "Chunkier, brighter mining laser.", kind: "visual" },
     { key: "depthHaze", name: "Depth Haze", desc: "Darken toward the crust so the core reads as deep.", kind: "visual" },
     { key: "veinOnly", name: "Vein-Only Mining", desc: "Regular rock yields nothing — only veins pay.", kind: "gameplay" },
+    { key: "laserAuto", name: "Laser: Targeting Array", desc: "Force auto-targeting on (try it with the other laser mods).", kind: "gameplay" },
+    { key: "laserTwin", name: "Laser: Twin Emitters", desc: "Force twin beams on. With Targeting Array, locks two veins at once.", kind: "gameplay" },
+    { key: "laserBurst", name: "Laser: Pulse Driver", desc: "Force burst fire on — punchy rhythmic pulses, stronger per hit.", kind: "gameplay" },
     { key: "laserHeat", name: "Laser Heat", desc: "Sustained firing overheats the laser; it cools down before firing again.", kind: "gameplay" },
     { key: "corePulse", name: "Core Pulses", desc: "Periodic core pulses that briefly double all yield.", kind: "gameplay" },
     { key: "shipTrail", name: "Ship Trail", desc: "The ship leaves a fading motion trail.", kind: "gameplay" },

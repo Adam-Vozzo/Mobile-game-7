@@ -14,6 +14,8 @@
     this.vy = 0;
     this.angle = -Math.PI / 2;
     this.beam = { active: false, x1: 0, y1: 0, x2: 0, y2: 0 };
+    this.beams = []; // all active beam segments this frame (twin emitters -> 2)
+    this._burstT = 0; // burst-fire phase clock
     this.thrusting = 0;
     this.energy = 1e9; // clamped to max on first update -> starts full
     this.maxEnergy = 1;
@@ -36,6 +38,76 @@
   // Free capacity, counting ore already credited + in flight + pending.
   Player.prototype.cargoRoom = function () {
     return this.maxCargo - (this.cargo.m + this.cargo.c + this.cargo.k + this.incoming.m + this.incoming.c + this.incoming.k + this._pend.m + this._pend.c + this._pend.k);
+  };
+
+  // Nearest direction (of 24) with rock in laser range. Optionally skip any
+  // direction within `minSep` radians of `exceptAng` (so twin beams pick two
+  // distinct veins). Returns the angle, or NaN if nothing is in range.
+  Player.prototype._nearestRockDir = function (world, range, step, exceptAng, minSep) {
+    let bd = Infinity,
+      found = NaN;
+    for (let a = 0; a < 24; a++) {
+      const ang = (a / 24) * U.TAU;
+      if (exceptAng != null) {
+        const diff = Math.abs(((ang - exceptAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        if (diff < minSep) continue;
+      }
+      const cx = Math.cos(ang),
+        cy = Math.sin(ang);
+      for (let dd = step; dd <= range; dd += step) {
+        if (world.densityAt(this.x + cx * dd, this.y + cy * dd) > T) {
+          if (dd < bd) {
+            bd = dd;
+            found = ang;
+          }
+          break;
+        }
+      }
+    }
+    return found;
+  };
+
+  // Cast one mining beam from (sx,sy) along ang; carve at the first rock hit and
+  // bank the yield. Returns { x1,y1,x2,y2, hit }. Used once or twice (twin).
+  Player.prototype._castBeam = function (sx, sy, ang, range, power, dt, stats, world, game, pm) {
+    const step = CFG.laser.step;
+    const cx = Math.cos(ang),
+      cy = Math.sin(ang);
+    let hit = false,
+      hx = sx + cx * range,
+      hy = sy + cy * range;
+    for (let dd = 0; dd <= range; dd += step) {
+      const px = sx + cx * dd,
+        py = sy + cy * dd;
+      if (world.densityAt(px, py) > T) {
+        hit = true;
+        hx = px;
+        hy = py;
+        break;
+      }
+    }
+    if (hit) {
+      const got = world.carve(hx, hy, stats.carveR, power * dt);
+      const gm = got.minerals * stats.yield * pm,
+        gc = got.crystals * stats.yield * pm,
+        gk = got.catalyst * stats.yield * pm;
+      const tot = gm + gc + gk;
+      if (tot > 0) {
+        this._lastMine.x = hx;
+        this._lastMine.y = hy;
+        const room = Math.max(0, this.cargoRoom());
+        const f = G.DEV.noCargoLimit ? 1 : tot > room ? room / tot : 1;
+        this._pend.m += gm * f;
+        this._pend.c += gc * f;
+        this._pend.k += gk * f;
+        const of = 1 - f;
+        if (of > 0.0001) game.addPickup(hx, hy, gm * of, gc * of, gk * of);
+        game.spawnSpark(hx, hy);
+      } else {
+        game.spawnDust(hx, hy);
+      }
+    }
+    return { x1: sx, y1: sy, x2: hx, y2: hy, hit: hit };
   };
 
   Player.prototype.update = function (dt, input, stats, world, game) {
@@ -125,80 +197,68 @@
       this.vy *= 0.3;
     }
 
-    // --- mining laser (forward, or auto-aim to nearest rock) ---
+    // --- mining laser: forward by default; salvaged augments reshape it. Each
+    // augment can also be forced on via a dev gameplay toggle (to explore combos).
     const pm = game.pulseMult ? game.pulseMult() : 1;
     const laserBlocked = brownout || (DEV.laserHeat && this.overheated);
+    const fAuto = aug.autoTarget || DEV.autoAim || DEV.laserAuto;
+    const fTwin = aug.twinBeams || DEV.laserTwin;
+    const fBurst = aug.burstFire || DEV.laserBurst;
     let firing = false;
+    this.beams.length = 0;
     if (!laserBlocked) {
-      const range = stats.laserRange;
-      const step = CFG.laser.step;
-      let sx, sy, hit = false, hx = 0, hy = 0;
-      if (DEV.autoAim) {
-        sx = this.x;
-        sy = this.y;
-        let best = Infinity;
-        for (let a = 0; a < 18; a++) {
-          const ang = (a / 18) * U.TAU,
-            cx = Math.cos(ang),
-            cy = Math.sin(ang);
-          for (let dd = step; dd <= range; dd += step) {
-            if (world.densityAt(sx + cx * dd, sy + cy * dd) > T) {
-              if (dd < best) {
-                best = dd;
-                hx = sx + cx * dd;
-                hy = sy + cy * dd;
-                hit = true;
-              }
-              break;
+      const range = stats.laserRange,
+        step = CFG.laser.step,
+        spread = 0.23;
+      // Pulse Driver: hard on/off rhythm, much stronger while pulsing
+      let power = stats.laserPower,
+        pulsing = true;
+      if (fBurst) {
+        this._burstT = (this._burstT + dt) % 0.72;
+        pulsing = this._burstT < 0.5;
+        power *= 2.2;
+      }
+      if (pulsing) {
+        // decide aim angle(s): forward, auto-target nearest, twin spread, or —
+        // the synergy — Targeting Array + Twin = lock the two nearest veins.
+        const aims = [];
+        if (fAuto) {
+          const a0 = this._nearestRockDir(world, range, step, null, 0);
+          if (!Number.isNaN(a0)) {
+            aims.push(a0);
+            if (fTwin) {
+              const a1 = this._nearestRockDir(world, range, step, a0, 0.9);
+              aims.push(Number.isNaN(a1) ? a0 + spread * 2 : a1);
             }
+          } else if (fTwin) {
+            aims.push(this.angle - spread, this.angle + spread);
+          } else {
+            aims.push(this.angle);
           }
+        } else if (fTwin) {
+          aims.push(this.angle - spread, this.angle + spread);
+        } else {
+          aims.push(this.angle);
         }
-      } else {
-        sx = this.x + nx * stats.playerRadius;
-        sy = this.y + ny * stats.playerRadius;
-        for (let dd = 0; dd <= range; dd += step) {
-          const px = sx + nx * dd,
-            py = sy + ny * dd;
-          if (world.densityAt(px, py) > T) {
-            hit = true;
-            hx = px;
-            hy = py;
-            break;
+        const per = (fTwin ? 0.6 : 1) * power; // twin = coverage, not pure DPS
+        for (let k = 0; k < aims.length; k++) {
+          const ang = aims[k];
+          const sx = this.x + Math.cos(ang) * stats.playerRadius;
+          const sy = this.y + Math.sin(ang) * stats.playerRadius;
+          const res = this._castBeam(sx, sy, ang, range, per, dt, stats, world, game, pm);
+          if (res.hit) {
+            this.beams.push(res);
+            firing = true;
           }
         }
       }
-      this.beam.active = hit;
-      this.beam.x1 = sx;
-      this.beam.y1 = sy;
-      if (hit) {
-        firing = true;
-        this.beam.x2 = hx;
-        this.beam.y2 = hy;
-        const got = world.carve(hx, hy, stats.carveR, stats.laserPower * dt);
-        const gm = got.minerals * stats.yield * pm,
-          gc = got.crystals * stats.yield * pm,
-          gk = got.catalyst * stats.yield * pm;
-        const tot = gm + gc + gk;
-        if (tot > 0) {
-          this._lastMine.x = hx;
-          this._lastMine.y = hy;
-          const f = DEV.noCargoLimit ? 1 : tot > Math.max(0, this.cargoRoom()) ? Math.max(0, this.cargoRoom()) / tot : 1;
-          this._pend.m += gm * f;
-          this._pend.c += gc * f;
-          this._pend.k += gk * f;
-          const of = 1 - f;
-          // overflow becomes loose ore that floats until you have room
-          if (of > 0.0001) game.addPickup(hx, hy, gm * of, gc * of, gk * of);
-        }
-        // veins flash + send ore to the ship; bare rock just throws dissipating dust
-        if (tot > 0) game.spawnSpark(hx, hy);
-        else game.spawnDust(hx, hy);
-      } else {
-        this.beam.x2 = sx + nx * range;
-        this.beam.y2 = sy + ny * range;
-      }
-    } else {
-      this.beam.active = false;
+    }
+    this.beam.active = firing;
+    if (firing) {
+      this.beam.x1 = this.beams[0].x1;
+      this.beam.y1 = this.beams[0].y1;
+      this.beam.x2 = this.beams[0].x2;
+      this.beam.y2 = this.beams[0].y2;
     }
 
     // laser heat (overheat experiment)
