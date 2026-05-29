@@ -17,6 +17,10 @@
     this.beam = { active: false, x1: 0, y1: 0, x2: 0, y2: 0 };
     this.beams = []; // all active beam segments this frame (twin emitters -> 2)
     this._burstT = 0; // burst-fire phase clock
+    this._aim0 = NaN; // eased auto-aim angles (primary, twin-secondary)
+    this._aim1 = NaN;
+    this._augDrain = 0; // current augment power draw (energy/s), for reference
+    this._flashLit = 0; // floodlight lit fraction (0..1), set each update
     this.thrusting = 0;
     this.energy = 1e9; // clamped to max on first update -> starts full
     this.maxEnergy = 1;
@@ -119,6 +123,14 @@
     this.maxEnergy = stats.energyMax;
     this.maxCargo = stats.cargoCapacity;
     if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
+    // floodlight lit fraction (0..1), ramping in with distance from the core —
+    // matches the render, and scales the floodlight's power draw. 0 if not owned.
+    if (stats.flashlight) {
+      const fc = CFG.flashlight;
+      this._flashLit = U.clamp((Math.hypot(this.x, this.y) / world.radius - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
+    } else {
+      this._flashLit = 0;
+    }
 
     // --- recharge / deposit source: base (fast) or nearest factory (slow) ---
     const dB = U.dist(this.x, this.y, base.x, base.y);
@@ -224,12 +236,18 @@
         // the synergy — Targeting Array + Twin = lock the two nearest veins.
         const aims = [];
         if (fAuto) {
-          const a0 = this._nearestRockDir(world, range, step, null, 0);
-          if (!Number.isNaN(a0)) {
-            aims.push(a0);
+          // auto-aim eases toward the target instead of snapping, so the beam
+          // swings smoothly between rocks. The eased angle is re-validated below.
+          const ease = Math.min(1, CFG.laser.aimEase * dt);
+          const t0 = this._nearestRockDir(world, range, step, null, 0);
+          if (!Number.isNaN(t0)) {
+            this._aim0 = Number.isNaN(this._aim0) ? t0 : U.lerpAngle(this._aim0, t0, ease);
+            aims.push(this._aim0);
             if (fTwin) {
-              const a1 = this._nearestRockDir(world, range, step, a0, 0.9);
-              aims.push(Number.isNaN(a1) ? a0 + spread * 2 : a1);
+              const t1 = this._nearestRockDir(world, range, step, t0, 0.9);
+              const tgt1 = Number.isNaN(t1) ? t0 + spread * 2 : t1;
+              this._aim1 = Number.isNaN(this._aim1) ? tgt1 : U.lerpAngle(this._aim1, tgt1, ease);
+              aims.push(this._aim1);
             }
           } else if (fTwin) {
             aims.push(this.angle - spread, this.angle + spread);
@@ -307,6 +325,23 @@
     }
     this.cargoLoad = this.cargo.m + this.cargo.c + this.cargo.k;
 
+    // augment power draw (energy/s): the more augments are active & in use, the
+    // more they cost — but only away from a recharge source. Passive sensors
+    // cost while owned; laser mods cost extra only while the laser is firing.
+    const ad = CFG.augmentDrain;
+    let augDrain = 0;
+    augDrain += (stats.scannerLevel || 0) * ad.scanner;
+    if (stats.flashlight) augDrain += ad.flashlight * this._flashLit;
+    if (owns("compass")) augDrain += ad.compass;
+    if (owns("resonance")) augDrain += ad.resonance;
+    if (owns("siphon")) augDrain += ad.siphon;
+    if (firing) {
+      if (fTwin) augDrain += ad.twin;
+      if (fBurst) augDrain += ad.burst;
+      if (fAuto) augDrain += ad.auto;
+    }
+    this._augDrain = augDrain;
+
     // --- energy ---
     if (DEV.infiniteEnergy) {
       this.energy = this.maxEnergy;
@@ -316,6 +351,7 @@
       if (owns("recharger")) this.energy += stats.recharge * 0.22 * dt; // passive recharge away from base
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
+      this.energy -= augDrain * dt;
     }
     if (this.energy < 0) this.energy = 0;
     if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;

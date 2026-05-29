@@ -91,6 +91,7 @@
       power0: 1.9,
       yield0: 0.9,
       step: 4,
+      aimEase: 9, // auto-aim slew rate (higher = snappier; the beam eases to target)
     },
 
     // ----- autonomous mining bots (chip rock from the edge) -----
@@ -121,6 +122,20 @@
 
     // ----- floodlight augment: auto-lit pool when far from the core -----
     flashlight: { range0: 120, startFrac: 0.42, fullFrac: 0.7 }, // light radius (world * sqrtI); ramps in between these fractions of core radius
+
+    // ----- augment power draw (energy/s, only away from a recharge source) -----
+    // Total drain scales with how many augments are active & in use: passive
+    // sensors cost while owned; laser mods cost extra only while the laser fires.
+    augmentDrain: {
+      scanner: 2.0, // per scanner level (L3 = 6/s)
+      flashlight: 3.0, // scaled by how lit it is (distance from core)
+      compass: 0.5,
+      resonance: 1.0,
+      siphon: 1.5,
+      twin: 2.5, // while firing
+      burst: 1.5, // while firing
+      auto: 1.5, // while firing
+    },
 
     // ----- economy: upgrade costs (geometric). catalyst gates Influence. -----
     cost: {
@@ -196,5 +211,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b26";
+  G.BUILD = "2026-05-28 · b27";
 })(window.G);

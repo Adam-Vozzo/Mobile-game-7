@@ -726,8 +726,7 @@
     // roam far from the core (so the dark depths stay readable). Drawn after the
     // haze so it lights back through it. Goes dark during a brownout.
     if (this.stats.flashlight && !this.player.brownout) {
-      const fc = CFG.flashlight;
-      const t = U.clamp((Math.hypot(this.player.x, this.player.y) / this.world.radius - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
+      const t = this.player._flashLit; // ramps in with distance from core (see Player.update)
       if (t > 0.01) {
         const sp = this.cam.worldToScreen(this.player.x, this.player.y, iw, ih);
         const rad = Math.max(24, this.stats.flashRange * this.cam.scale);
