@@ -80,11 +80,12 @@
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
-      rechargerFrac: 0.08, // Recharger augment: passive recharge = this * energyRecharge (away from base)
+      rechargerFrac: 0.12, // Recharger augment: passive recharge = this * energyRecharge (away from base)
       depletedSpeed: 0.5, // movement multiplier while browned-out (slowed 50%)
       brownoutRecover: 0.15, // exit brownout once energy climbs back to this fraction of max
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
+      energyStart: 2, // starting charge in multiples of max (i.e. begin at 2x cap; settles to cap)
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -156,6 +157,11 @@
       influence: { crystals: 30, catalyst: 5, growth: 2.0, crystalGrowth: 2.0, catalystGrowth: 2.0 },
       factory: { minerals: 120, crystals: 2, growth: 2.0, crystalGrowth: 1.6 },
       shipyard: { minerals: 250, crystals: 8, growth: 1 },
+      // try-it structure costs (each builds many times; geometric per copy)
+      beaconTower: { minerals: 180, crystals: 3, growth: 1.8, crystalGrowth: 1.5 },
+      refinery: { minerals: 220, crystals: 6, growth: 1.9, crystalGrowth: 1.6 },
+      depot: { minerals: 160, crystals: 2, growth: 1.7, crystalGrowth: 1.5 },
+      scannerArray: { minerals: 200, crystals: 5, growth: 1.8, crystalGrowth: 1.5 },
       // per-factory bot upgrades
       botBay: { minerals: 90, crystals: 3, growth: 1.9, crystalGrowth: 1.7 },
       botRange: { minerals: 40, growth: 1.5 },
@@ -167,7 +173,19 @@
     pickup: { pullRange: 95, mergeRange: 16, maxCount: 90, chunk: 0.22 },
 
     // ----- buried wrecks to salvage (unlock special augments) -----
-    wreck: { count: 12, salvageRange: 60, reward: { minerals: 400, crystals: 30, catalyst: 6 } },
+    // beacon: a faint signal pulse you can pick up nearby — a soft ring that
+    // washes the screen when you're inside `beaconRange` of a buried wreck.
+    wreck: { count: 12, salvageRange: 60, reward: { minerals: 400, crystals: 30, catalyst: 6 }, beaconRange: 240, beaconPeriod: 2.3 },
+
+    // ----- structure ideas (gameplay dev toggles): try-it experiments -----
+    // Each is a small built structure that affects nearby gameplay; flip on,
+    // tap your base, and "Build" appears in Structures.
+    structures: {
+      beaconTower: { range: 180, rechargeMult: 0.5 }, // mini recharge zone away from base
+      refinery: { range: 160, yieldMult: 1.6 }, // mining within range pays more
+      depot: { pullRange: 220 }, // passively pulls loose pickups
+      scannerArray: { range: 260, period: 1.6 }, // pings around itself, reveals veins
+    },
 
     // ----- misc -----
     save: { key: "coreforge.save.v2", interval: 8 },
@@ -201,6 +219,11 @@
     screenShake: false,
     // terrain biome (dev): re-rolls the core's shape + ore. One at a time.
     biome: "default", // default | caverns | dense | rich | barren | catalystRush
+    // structure-idea toggles (dev): unlock try-it builds in the Structures tab
+    structBeacon: false,
+    structRefinery: false,
+    structDepot: false,
+    structScanner: false,
     // cheat toggles
     infiniteEnergy: false,
     magnet: false,
@@ -239,5 +262,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b28";
+  G.BUILD = "2026-05-28 · b29";
 })(window.G);

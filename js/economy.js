@@ -22,9 +22,17 @@
         influence: 0,
         factory: 0, // number of factories built (drives factory build cost)
         shipyard: 0, // 0 or 1
+        beaconTower: 0,
+        refinery: 0,
+        depot: 0,
+        scannerArray: 0,
       },
     };
   };
+
+  // List of structure ids that are user-buildable (incl. dev-toggled try-it
+  // ideas). Lets the menu/rendering iterate uniformly without per-kind branches.
+  Economy.STRUCTURE_IDS = ["factory", "shipyard", "beaconTower", "refinery", "depot", "scannerArray"];
 
   Economy.factoryDefaultLevels = function () {
     return { botBay: 0, botRange: 0, botPower: 0, botCapacity: 0 };
@@ -204,6 +212,12 @@
     structures: [
       { id: "factory", name: "Build Factory", desc: "Deploy a factory here that assembles autonomous mining bots." },
       { id: "shipyard", name: "Build Shipyard", desc: "Construct a shipyard to research & install ship augments. Build one, then tap it.", max: 1 },
+      // try-it ideas (dev): each appears in the Structures menu when its
+      // gameplay toggle is on, so you can prototype + tune before committing.
+      { id: "beaconTower", name: "Build Beacon Tower", desc: "A small recharge beacon. Acts like a mini base — your ship recharges (slowly) within its range.", dev: "structBeacon" },
+      { id: "refinery", name: "Build Refinery", desc: "Mining within its range pays much more — process veins on-site instead of hauling raw.", dev: "structRefinery" },
+      { id: "depot", name: "Build Ore Depot", desc: "Passively collects loose ore pickups from a wide radius into permanent banked resources.", dev: "structDepot" },
+      { id: "scannerArray", name: "Build Scanner Array", desc: "A wide-area ping that lights up nearby veins on its own, even when you're far away.", dev: "structScanner" },
     ],
     factory: [
       { id: "botBay", name: "Expand Bay", desc: "House more bots at this factory." },
@@ -247,6 +261,11 @@
     { key: "laserBurst", name: "Laser: Pulse Driver", desc: "Force burst fire on — punchy rhythmic pulses, stronger per hit.", kind: "gameplay" },
     { key: "laserHeat", name: "Laser Heat", desc: "Sustained firing overheats the laser; it cools down before firing again.", kind: "gameplay" },
     { key: "corePulse", name: "Core Pulses", desc: "Periodic core pulses that briefly double all yield.", kind: "gameplay" },
+    // try-it structures: unlock build options in the BASE > Structures menu
+    { key: "structBeacon", name: "Try: Beacon Tower", desc: "Unlock a buildable mini-base — gives a small recharge zone away from base.", kind: "gameplay" },
+    { key: "structRefinery", name: "Try: Refinery", desc: "Unlock a buildable refinery that boosts ore yield from veins you mine nearby.", kind: "gameplay" },
+    { key: "structDepot", name: "Try: Ore Depot", desc: "Unlock a passive collector that vacuums loose pickups into permanent ore.", kind: "gameplay" },
+    { key: "structScanner", name: "Try: Scanner Array", desc: "Unlock a wide-area ping that reveals veins around it on its own.", kind: "gameplay" },
     { key: "shipTrail", name: "Ship Trail", desc: "The ship leaves a fading motion trail.", kind: "gameplay" },
     { key: "screenShake", name: "Screen Shake", desc: "Subtle camera shake while mining.", kind: "gameplay" },
     { key: "infiniteEnergy", name: "Infinite Energy", desc: "Never run out of energy.", kind: "cheat" },

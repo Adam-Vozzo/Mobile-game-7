@@ -187,6 +187,8 @@
 
     const defs = Eco.UPGRADES[defsKey];
     for (const def of defs) {
+      // dev-gated structures: only show when their try-it toggle is on
+      if (def.dev && !G.DEV[def.dev]) continue;
       const lvl = isFactory ? this.building.levels[def.id] || 0 : s.levels[def.id] || 0;
       const maxed = def.max != null && lvl >= def.max;
       const cost = Eco.cost(def.id, def.id === "factory" ? s.levels.factory : def.id === "shipyard" ? 0 : lvl);
@@ -200,6 +202,9 @@
       if (def.id === "factory") levelLabel = "Built " + s.levels.factory;
       if (def.id === "shipyard") levelLabel = s.levels.shipyard ? "Built" : "";
       if (def.id === "influence") levelLabel = "Class " + ROMAN[Math.min(lvl, 4)] + " · ◎" + U.formatNum(game.stats.influence);
+      if (def.id === "beaconTower" || def.id === "refinery" || def.id === "depot" || def.id === "scannerArray") {
+        levelLabel = "Built " + lvl;
+      }
 
       let costHtml;
       if (maxed) {

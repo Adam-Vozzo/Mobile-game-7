@@ -38,6 +38,7 @@
         player: { x: g.player.x, y: g.player.y, angle: g.player.angle },
         factories: g.factories.map((f) => ({ x: f.x, y: f.y, seed: f.seed, bots: f.bots.length, levels: f.levels })),
         shipyard: g.shipyard ? { x: g.shipyard.x, y: g.shipyard.y } : null,
+        structures: (g.structures || []).map((s) => ({ x: s.x, y: s.y, kind: s.kind })),
         wrecksSalvaged: g.wrecks.map((w) => w.salvaged),
         density: b64encode(u8),
       };

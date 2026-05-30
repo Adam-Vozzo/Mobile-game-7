@@ -13,6 +13,7 @@
     this.stats = Eco.derive(this.state);
     this.factories = [];
     this.shipyard = null;
+    this.structures = []; // try-it built structures (beacon/refinery/depot/scanner)
     this.wrecks = [];
     this.particles = [];
     this.pickups = [];
@@ -62,10 +63,12 @@
     this.base = new G.Base();
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.structures = [];
     this.shipyard = null;
     this.genWrecks();
     this.recomputeStats();
-    this.player.energy = this.stats.energyMax;
+    // Start with a banked overcharge that drains naturally during play.
+    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
     G.UI.toast("Steer with the left side. Mine glowing veins. Stay near BASE to recharge & upgrade.", 6500);
   };
 
@@ -107,6 +110,7 @@
     this.player = new G.Player(data.player ? data.player.x : 0, data.player ? data.player.y : 0);
     if (data.player) this.player.angle = data.player.angle;
     this.factories = [];
+    this.structures = [];
     this.recomputeStats();
     if (data.factories) {
       for (const f of data.factories) {
@@ -117,6 +121,9 @@
         for (let i = 0; i < n; i++) fac.bots.push(new G.Bot(fac.x, fac.y, fac, (fac.seed + i * 7919) >>> 0));
         this.factories.push(fac);
       }
+    }
+    if (data.structures) {
+      for (const st of data.structures) this.structures.push(new G.Structure(st.x, st.y, st.kind));
     }
     this.shipyard = data.shipyard ? new G.Shipyard(data.shipyard.x, data.shipyard.y) : null;
     this.genWrecks(data.wrecksSalvaged);
@@ -170,6 +177,16 @@
       this.world.clearCircle(this.player.x, this.player.y, 22 * this.stats.sqrtI);
       this.shipyard = new G.Shipyard(this.player.x, this.player.y);
       G.UI.toast("Shipyard built. Tap it to research ship augments.", 3200);
+    } else if (id === "beaconTower" || id === "refinery" || id === "depot" || id === "scannerArray") {
+      const lvl = this.state.levels[id] || 0;
+      const cost = Eco.cost(id, lvl);
+      if (!Eco.canPay(this.state, cost)) return false;
+      Eco.pay(this.state, cost);
+      this.state.levels[id] = lvl + 1;
+      this.world.clearCircle(this.player.x, this.player.y, 20 * this.stats.sqrtI);
+      this.structures.push(new G.Structure(this.player.x, this.player.y, id));
+      const names = { beaconTower: "Beacon Tower", refinery: "Refinery", depot: "Ore Depot", scannerArray: "Scanner Array" };
+      G.UI.toast(names[id] + " deployed.", 2600);
     } else {
       if ((this.state.levels[id] || 0) >= Eco.maxLevel(id)) return false; // capped (e.g. Ship Class)
       const cost = Eco.cost(id, this.state.levels[id]);
@@ -266,6 +283,7 @@
     this.world = new G.World((Math.random() * 1e9) >>> 0);
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.structures = [];
     this.shipyard = null;
     this.genWrecks();
     this.particles = [];
@@ -273,7 +291,7 @@
     this.cable.active = false;
     this.won = false;
     this.recomputeStats();
-    this.player.energy = this.stats.energyMax;
+    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
     this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);
@@ -287,6 +305,7 @@
     this.base = new G.Base();
     this.player = new G.Player(0, 0);
     this.factories = [];
+    this.structures = [];
     this.shipyard = null;
     this.genWrecks();
     this.particles = [];
@@ -297,7 +316,7 @@
     this.won = false;
     this.time = 0;
     this.recomputeStats();
-    this.player.energy = this.stats.energyMax;
+    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
     this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);
@@ -480,12 +499,35 @@
     const siphon = Eco.ownsAugment(this.state, "siphon");
     const range = CFG.pickup.pullRange * this.stats.sqrtI * G.DEV.pickupRange;
     const r2 = siphon ? Infinity : range * range;
+    // Ore Depot (try-it structure): collects loose pickups within a wide radius
+    // and banks them directly to state (skips the cargo path).
+    const dcfg = CFG.structures && CFG.structures.depot;
+    const depots = dcfg && this.structures ? this.structures.filter((s) => s.kind === "depot") : [];
+    const dr2 = dcfg ? dcfg.pullRange * this.stats.sqrtI * dcfg.pullRange * this.stats.sqrtI : 0;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pk = this.pickups[i];
       const tot = pk.m + pk.c + pk.k;
       if (tot <= 0.0001) {
         this.pickups.splice(i, 1);
         continue;
+      }
+      // Depot vacuum: drain a slice of the pickup straight into resources
+      if (depots.length) {
+        for (const dp of depots) {
+          if (U.dist2(pk.x, pk.y, dp.x, dp.y) <= dr2) {
+            const take = Math.min(tot, tot * 0.6 * dt + 0.5 * dt);
+            const f = take / tot;
+            const dm = pk.m * f,
+              dc = pk.c * f,
+              dk = pk.k * f;
+            pk.m -= dm;
+            pk.c -= dc;
+            pk.k -= dk;
+            this.addResources(dm, dc, dk, false);
+            this.spawnDepositMote(pk.x, pk.y, dp.x, dp.y);
+            break;
+          }
+        }
       }
       pk.cd -= dt;
       const room = pl.cargoRoom();
@@ -621,6 +663,7 @@
     }
     this.base.update(dt);
     for (const f of this.factories) f.update(dt, this);
+    if (this.structures) for (const st of this.structures) st.update(dt);
     if (!frozen) this.player.update(dt, this.input, this.stats, this.world, this);
     this.updateParticles(dt);
     this.updatePickups(dt);
@@ -721,6 +764,18 @@
 
     ctx.save();
     ctx.translate(shx, shy);
+    // Scanner Array (try-it structure): each one adds a passive reveal around it.
+    const sa = CFG.structures && CFG.structures.scannerArray;
+    if (sa && this.structures && this.structures.length) {
+      const extras = [];
+      const r = sa.range * this.stats.sqrtI;
+      for (const st of this.structures) {
+        if (st.kind === "scannerArray") extras.push({ px: st.x, py: st.y, range: r });
+      }
+      this.world._extraScans = extras.length ? extras : null;
+    } else {
+      this.world._extraScans = null;
+    }
     this.world.render(ctx, this.cam, iw, ih, this.time, scan);
     if (G.DEV.parallaxStars) this.drawParallax(ctx, iw, ih); // over terrain so it's visible
     this.drawWrecks(ctx, iw, ih);
@@ -778,11 +833,32 @@
       const exposed = this.world.densityAt(wr.x, wr.y) <= this.world.cfg.threshold;
       ctx.save();
       if (!exposed) {
-        // buried hint
+        // buried hint dot — barely visible unless you're close
         ctx.globalAlpha = 0.5;
         ctx.fillStyle = COL.crystal;
         ctx.fillRect((sp.x | 0) - 1, sp.y | 0, 3, 1);
         ctx.fillRect(sp.x | 0, (sp.y | 0) - 1, 1, 3);
+        // short-range beacon pulse: an expanding ring that signals a buried
+        // wreck nearby. Fades with distance so it gives a heading without
+        // giving the exact position away.
+        const dp = U.dist(this.player.x, this.player.y, wr.x, wr.y);
+        const bRange = CFG.wreck.beaconRange * this.stats.sqrtI;
+        if (dp <= bRange) {
+          const period = CFG.wreck.beaconPeriod;
+          // each wreck pulses on its own phase so multiple don't sync
+          const phase = (wr.x * 0.013 + wr.y * 0.029) % 1;
+          const t = ((this.time / period) + phase) % 1; // 0..1, ring radius
+          const ringR = t * bRange * cam.scale;
+          const prox = 1 - dp / bRange; // closer = brighter
+          ctx.globalAlpha = (1 - t) * 0.65 * prox;
+          ctx.strokeStyle = COL.crystal;
+          ctx.lineWidth = 1;
+          ctx.shadowColor = COL.crystal;
+          ctx.shadowBlur = gb(4);
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, ringR, 0, TAU);
+          ctx.stroke();
+        }
       } else {
         const r = Math.max(this.stats.playerRadius * cam.scale * 1.1, 4);
         const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
@@ -960,6 +1036,13 @@
       const sp = cam.worldToScreen(this.shipyard.x, this.shipyard.y, iw, ih);
       this.drawShipyard(ctx, sp.x, sp.y, Math.max(this.shipyard.r * cam.scale, 7), this.shipyard.spin);
     }
+    // try-it structures
+    if (this.structures && this.structures.length) {
+      for (const st of this.structures) {
+        const sp = cam.worldToScreen(st.x, st.y, iw, ih);
+        this.drawStructure(ctx, st, sp.x, sp.y, Math.max(st.r * cam.scale, 6), iw, ih);
+      }
+    }
 
     this.drawBase(ctx, bp.x, bp.y, Math.max(this.base.r * cam.scale, 9));
     this.drawCable(ctx, iw, ih);
@@ -995,6 +1078,106 @@
     }
     ctx.fillStyle = COL.crystal;
     ctx.fillRect(-1.5, -1.5, 3, 3);
+    ctx.restore();
+  };
+
+  // Try-it structures (beacon / refinery / depot / scanner). Each gets a small
+  // distinct glyph + a faint range ring so its effect area reads visually.
+  Game.prototype.drawStructure = function (ctx, st, x, y, r, iw, ih) {
+    const sa = CFG.structures;
+    let color = COL.bright,
+      ringR = 0;
+    if (st.kind === "beaconTower") {
+      color = COL.charge;
+      ringR = sa.beaconTower.range * this.stats.sqrtI * this.cam.scale;
+    } else if (st.kind === "refinery") {
+      color = COL.mineralDot;
+      ringR = sa.refinery.range * this.stats.sqrtI * this.cam.scale;
+    } else if (st.kind === "depot") {
+      color = COL.bright;
+      ringR = sa.depot.pullRange * this.stats.sqrtI * this.cam.scale;
+    } else if (st.kind === "scannerArray") {
+      color = COL.crystalDot;
+      ringR = sa.scannerArray.range * this.stats.sqrtI * this.cam.scale;
+    }
+    // faint dashed range ring
+    if (ringR > 6 && ringR < Math.max(iw, ih) * 1.5) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 6]);
+      ctx.beginPath();
+      ctx.arc(x, y, ringR, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(st.spin);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    if (CFG.render.glow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = gb(3);
+    }
+    if (st.kind === "beaconTower") {
+      // tall antenna + pulsing top
+      ctx.beginPath();
+      ctx.moveTo(0, r);
+      ctx.lineTo(0, -r);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.6, r);
+      ctx.lineTo(r * 0.6, r);
+      ctx.stroke();
+      const pulse = 0.5 + 0.5 * Math.sin(st._t * 4);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.4 + 0.6 * pulse;
+      ctx.beginPath();
+      ctx.arc(0, -r, Math.max(1.5, r * 0.34), 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (st.kind === "refinery") {
+      // smelter: trapezoid with a glowing core dot
+      ctx.beginPath();
+      ctx.moveTo(-r, r);
+      ctx.lineTo(r, r);
+      ctx.lineTo(r * 0.7, -r);
+      ctx.lineTo(-r * 0.7, -r);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(1.5, r * 0.3), 0, TAU);
+      ctx.fill();
+    } else if (st.kind === "depot") {
+      // funnel: chevron pointing in, with a small pellet stack
+      ctx.beginPath();
+      ctx.moveTo(-r, -r);
+      ctx.lineTo(0, r * 0.3);
+      ctx.lineTo(r, -r);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillRect(-1, r * 0.3, 2, r * 0.6);
+      ctx.fillRect(-r * 0.5, r * 0.9, r, 1);
+    } else if (st.kind === "scannerArray") {
+      // dish with rotating sweep line
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.stroke();
+      const sa2 = sa.scannerArray;
+      const sweep = (st._t * (2 * Math.PI / sa2.period)) % (2 * Math.PI);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(sweep) * r, Math.sin(sweep) * r);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(1.5, r * 0.22), 0, TAU);
+      ctx.fill();
+    }
     ctx.restore();
   };
 

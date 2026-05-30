@@ -93,9 +93,24 @@
     }
     if (hit) {
       const got = world.carve(hx, hy, stats.carveR, power * dt);
-      const gm = got.minerals * stats.yield * pm,
-        gc = got.crystals * stats.yield * pm,
-        gk = got.catalyst * stats.yield * pm;
+      // Refinery (try-it structure): mining within its range gets a yield boost.
+      let refMult = 1;
+      const rf = CFG.structures && CFG.structures.refinery;
+      if (rf && game.structures && game.structures.length) {
+        const rr2 = (rf.range * stats.sqrtI) * (rf.range * stats.sqrtI);
+        for (const st of game.structures) {
+          if (st.kind !== "refinery") continue;
+          const dx = st.x - hx,
+            dy = st.y - hy;
+          if (dx * dx + dy * dy <= rr2) {
+            refMult = rf.yieldMult;
+            break;
+          }
+        }
+      }
+      const gm = got.minerals * stats.yield * pm * refMult,
+        gc = got.crystals * stats.yield * pm * refMult,
+        gk = got.catalyst * stats.yield * pm * refMult;
       const tot = gm + gc + gk;
       if (tot > 0) {
         this._lastMine.x = hx;
@@ -122,7 +137,8 @@
     const base = game.base;
     this.maxEnergy = stats.energyMax;
     this.maxCargo = stats.cargoCapacity;
-    if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
+    // Note: existing overcharge (start-of-run banked energy) is not clamped on
+    // the way in — it drains naturally during play; the recharge paths re-clamp.
     // floodlight lit fraction (0..1), ramping in with distance from the core —
     // matches the render, and scales the floodlight's power draw. 0 if not owned.
     if (stats.flashlight) {
@@ -153,6 +169,26 @@
       if (bf) {
         src = bf;
         rate = stats.recharge * CFG.factory.rechargeMult;
+      }
+      // Beacon Tower: a built mini-recharge source (try-it structure)
+      const bs = CFG.structures && CFG.structures.beaconTower;
+      if (bs && game.structures && game.structures.length) {
+        const br = bs.range * stats.sqrtI;
+        let bbd = br,
+          bbest = null;
+        for (const st of game.structures) {
+          if (st.kind !== "beaconTower") continue;
+          const d = U.dist(this.x, this.y, st.x, st.y);
+          if (d <= bbd) {
+            bbd = d;
+            bbest = st;
+          }
+        }
+        // Prefer base/factory if already found; otherwise use the beacon
+        if (bbest && !src) {
+          src = bbest;
+          rate = stats.recharge * bs.rechargeMult;
+        }
       }
     }
     this.nearBase = dB <= stats.baseRange;
@@ -347,14 +383,17 @@
       this.energy = this.maxEnergy;
     } else if (src) {
       this.energy += rate * DEV.recharge * dt;
+      if (this.energy > this.maxEnergy) this.energy = this.maxEnergy; // recharge can't exceed max
     } else {
-      if (owns("recharger")) this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // weak passive recharge away from base
+      if (owns("recharger")) {
+        this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // passive recharge away from base
+        if (this.energy > this.maxEnergy) this.energy = this.maxEnergy; // passive can't exceed max either
+      }
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
       this.energy -= augDrain * dt;
     }
     if (this.energy < 0) this.energy = 0;
-    if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
 
     // motion trail (drawn only when the toggle is on)
     this._trail.push({ x: this.x, y: this.y });
@@ -637,6 +676,22 @@
     this.salvaged = false;
   }
 
+  // ---------------- Buildable structure (try-it ideas behind dev toggles) ----
+  // Lightweight: stores its kind + position; game.js applies the effect.
+  function Structure(x, y, kind) {
+    this.x = x;
+    this.y = y;
+    this.kind = kind; // beaconTower | refinery | depot | scannerArray
+    this.r = kind === "scannerArray" ? 13 : 12;
+    this.panel = null; // not interactable yet
+    this.spin = 0;
+    this._t = 0; // local clock for pinging/ticking
+  }
+  Structure.prototype.update = function (dt) {
+    this.spin += dt * 0.5;
+    this._t += dt;
+  };
+
   // ---------------- Rope (recharge cable; verlet, looks dragged) ----------------
   function Rope(segs) {
     this.segs = segs || 16;
@@ -711,5 +766,6 @@
   G.Base = Base;
   G.Shipyard = Shipyard;
   G.Wreck = Wreck;
+  G.Structure = Structure;
   G.Rope = Rope;
 })(window.G);

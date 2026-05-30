@@ -341,6 +341,9 @@
 
     // 1b) vein scanner overlay (researched augment, or dev force): mark veins
     if (scan) this._scanner(ctx, scan, cam, vw, vh, time);
+    // Additional scanner reveals from try-it Scanner Array structures (drawn on
+    // top so they layer cleanly with the player's own scope).
+    if (this._extraScans) for (const s of this._extraScans) this._scanner(ctx, s, cam, vw, vh, time);
 
     // 2) textured dots (open caverns only)
     this._renderDots(ctx, cam, vw, vh, minWX, maxWX, minWY, maxWY, time);
