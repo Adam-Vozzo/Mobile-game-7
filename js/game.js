@@ -68,7 +68,7 @@
     this.genWrecks();
     this.recomputeStats();
     // Start with a banked overcharge that drains naturally during play.
-    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
+    this.player.energy = this.stats.energyMax;
     G.UI.toast("Steer with the left side. Mine glowing veins. Stay near BASE to recharge & upgrade.", 6500);
   };
 
@@ -291,7 +291,7 @@
     this.cable.active = false;
     this.won = false;
     this.recomputeStats();
-    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
+    this.player.energy = this.stats.energyMax;
     this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);
@@ -316,7 +316,7 @@
     this.won = false;
     this.time = 0;
     this.recomputeStats();
-    this.player.energy = this.stats.energyMax * (CFG.player.energyStart || 1);
+    this.player.energy = this.stats.energyMax;
     this.cam.snap(0, 0, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);

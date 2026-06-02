@@ -76,7 +76,7 @@
       drag: 0.92, // higher = more glide / momentum
       rockDrag: 0.45,
       // energy
-      maxEnergy0: 150, // scales with sqrt(influence)
+      maxEnergy0: 300, // scales with sqrt(influence) — doubled from 150 (b30: bigger starting tank)
       energyMove: 9, // /s at full thrust, outside base range
       energyLaser: 7, // /s while firing, outside base range
       energyRecharge: 40, // /s inside base range
@@ -85,7 +85,6 @@
       brownoutRecover: 0.15, // exit brownout once energy climbs back to this fraction of max
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
-      energyStart: 2, // starting charge in multiples of max (i.e. begin at 2x cap; settles to cap)
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -262,5 +261,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b29";
+  G.BUILD = "2026-05-28 · b30";
 })(window.G);

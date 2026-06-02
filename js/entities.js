@@ -137,8 +137,7 @@
     const base = game.base;
     this.maxEnergy = stats.energyMax;
     this.maxCargo = stats.cargoCapacity;
-    // Note: existing overcharge (start-of-run banked energy) is not clamped on
-    // the way in — it drains naturally during play; the recharge paths re-clamp.
+    if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
     // floodlight lit fraction (0..1), ramping in with distance from the core —
     // matches the render, and scales the floodlight's power draw. 0 if not owned.
     if (stats.flashlight) {
@@ -383,17 +382,14 @@
       this.energy = this.maxEnergy;
     } else if (src) {
       this.energy += rate * DEV.recharge * dt;
-      if (this.energy > this.maxEnergy) this.energy = this.maxEnergy; // recharge can't exceed max
     } else {
-      if (owns("recharger")) {
-        this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // passive recharge away from base
-        if (this.energy > this.maxEnergy) this.energy = this.maxEnergy; // passive can't exceed max either
-      }
+      if (owns("recharger")) this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // passive recharge away from base
       if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
       if (firing) this.energy -= P.energyLaser * dt;
       this.energy -= augDrain * dt;
     }
     if (this.energy < 0) this.energy = 0;
+    if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
 
     // motion trail (drawn only when the toggle is on)
     this._trail.push({ x: this.x, y: this.y });
