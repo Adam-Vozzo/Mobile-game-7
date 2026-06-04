@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0e0a05" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CORE" />
+    <title>CORE — Deep Mining</title>
+    <link rel="manifest" href="manifest.webmanifest?v=b31" />
+    <link rel="apple-touch-icon" href="icons/icon-180.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css?v=b31" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="stat"><span class="ic ic-min">◈</span><span id="hud-minerals">0</span></div>
+      <div class="stat"><span class="ic ic-cry">✦</span><span id="hud-crystals">0</span></div>
+      <div class="stat"><span class="ic ic-cat">✷</span><span id="hud-catalyst">0</span></div>
+      <div class="stat"><span class="ic ic-bot">▴</span><span id="hud-bots">0/0</span></div>
+      <div class="stat"><span class="ic ic-fac">⬡</span><span id="hud-factories">0</span></div>
+      <div class="stat"><span class="ic ic-inf">◎</span><span id="hud-influence">1</span></div>
+      <div class="stat"><span class="ic ic-core">◌</span><span id="hud-core">0%</span></div>
+    </div>
+
+    <button id="btn-help" aria-label="Glossary">?</button>
+    <button id="btn-settings" aria-label="Settings">⚙</button>
+    <button id="btn-build" aria-label="Build menu">☰ BUILD</button>
+
+    <div id="prompt"></div>
+    <div id="toast"></div>
+    <div id="ver"></div>
+    <div id="fps"></div>
+
+    <!-- Upgrade modal -->
+    <div id="modal">
+      <div id="modal-card">
+        <div id="modal-head">
+          <div>
+            <div id="modal-title">BASE</div>
+            <div id="modal-sub"></div>
+          </div>
+          <button id="modal-close">✕</button>
+        </div>
+        <div id="modal-tabs"></div>
+        <div id="modal-list"></div>
+      </div>
+    </div>
+
+    <script src="js/util.js?v=b31"></script>
+    <script src="js/config.js?v=b31"></script>
+    <script src="js/world.js?v=b31"></script>
+    <script src="js/camera.js?v=b31"></script>
+    <script src="js/input.js?v=b31"></script>
+    <script src="js/economy.js?v=b31"></script>
+    <script src="js/entities.js?v=b31"></script>
+    <script src="js/save.js?v=b31"></script>
+    <script src="js/ui.js?v=b31"></script>
+    <script src="js/game.js?v=b31"></script>
+    <script src="js/main.js?v=b31"></script>
+  </body>
+</html>
