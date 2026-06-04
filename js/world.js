@@ -18,6 +18,7 @@
     this.richness = new Float32Array(this.P * this.P);
     this.crystal = new Uint8Array(this.P * this.P);
     this.special = new Uint8Array(this.P * this.P);
+    this.obsidian = new Uint8Array(this.P * this.P);
     this.solidTotal = 0;
     this.removedTotal = 0;
     this.generate();
@@ -68,11 +69,53 @@
         this.crystal[id] = vn > w.crystalVeinCut ? 1 : 0;
         const sn = U.fbm(wx * w.specialScale + 7, wy * w.specialScale + 51, this.seed + 41, 2);
         this.special[id] = sn > w.specialVeinCut ? 1 : 0;
+        this.obsidian[id] = 0;
       }
     }
     this.solidTotal = solid;
     this.removedTotal = 0;
     this.clearCircle(0, 0, w.startPocket);
+    this._placeObsidianPatches();
+  };
+
+  // Sprinkle a few obsidian patches across the disc — the first gear gate. Cells
+  // tagged here can't be carved without the Plasma Drill augment. Placement is
+  // seeded so the patches are stable across reloads / world re-rolls.
+  World.prototype._placeObsidianPatches = function () {
+    const o = G.CFG.obsidian;
+    if (!o || !o.patches) return;
+    const rng = U.mulberry32((this.seed ^ 0x51b3a7) >>> 0);
+    const cell = this.cell,
+      P = this.P,
+      R = this.radius,
+      T = this.cfg.threshold;
+    let placed = 0,
+      guard = 0;
+    while (placed < o.patches && guard++ < 400) {
+      const a = rng() * U.TAU;
+      const dist = o.minR + (o.maxR - o.minR) * rng();
+      const cx = Math.cos(a) * dist,
+        cy = Math.sin(a) * dist;
+      if (this.densityAt(cx, cy) <= T) continue; // want it buried in solid rock
+      const r = o.patchR * (0.7 + rng() * 0.6);
+      const gi0 = Math.max(0, Math.floor((cx - r + R) / cell));
+      const gi1 = Math.min(this.NX, Math.ceil((cx + r + R) / cell));
+      const gj0 = Math.max(0, Math.floor((cy - r + R) / cell));
+      const gj1 = Math.min(this.NY, Math.ceil((cy + r + R) / cell));
+      const r2 = r * r;
+      for (let j = gj0; j <= gj1; j++) {
+        const wy = this.worldY(j);
+        for (let i = gi0; i <= gi1; i++) {
+          const wx = this.worldX(i);
+          const dx = wx - cx,
+            dy = wy - cy;
+          if (dx * dx + dy * dy > r2) continue;
+          const id = j * P + i;
+          if (this.density[id] > T) this.obsidian[id] = 1;
+        }
+      }
+      placed++;
+    }
   };
 
   World.prototype.clearCircle = function (cx, cy, r) {
@@ -98,12 +141,16 @@
     }
   };
 
-  // Returns {minerals, crystals, catalyst} (base amounts; caller applies yield).
-  World.prototype.carve = function (cx, cy, r, amount) {
+  // Returns {minerals, crystals, catalyst, obsidianHit} (base amounts; caller
+  // applies yield). opts.plasmaDrill must be truthy to carve obsidian cells; any
+  // obsidian skipped sets obsidianHit so the caller can show a one-time hint.
+  World.prototype.carve = function (cx, cy, r, amount, opts) {
     const w = this.cfg,
       P = this.P,
       cell = this.cell,
       R = this.radius;
+    const canObsidian = !!(opts && opts.plasmaDrill);
+    const ob = G.CFG.obsidian;
     const gi0 = Math.max(0, Math.floor((cx - r + R) / cell));
     const gi1 = Math.min(this.NX, Math.ceil((cx + r + R) / cell));
     const gj0 = Math.max(0, Math.floor((cy - r + R) / cell));
@@ -111,7 +158,8 @@
     const r2 = r * r;
     let minerals = 0,
       crystals = 0,
-      catalyst = 0;
+      catalyst = 0,
+      obsidianHit = false;
     for (let j = gj0; j <= gj1; j++) {
       const wy = this.worldY(j);
       for (let i = gi0; i <= gi1; i++) {
@@ -122,24 +170,36 @@
         const id = j * P + i;
         const cur = this.density[id];
         if (cur <= 0) continue;
+        const isObs = this.obsidian[id];
+        if (isObs && !canObsidian) {
+          obsidianHit = true;
+          continue;
+        }
         const falloff = 1 - Math.sqrt(dd) / r;
         const take = Math.min(cur, amount * (0.4 + 0.6 * falloff));
         if (take <= 0) continue;
         this.density[id] = cur - take;
         this.removedTotal += take;
         const rich = this.richness[id];
-        // only mineral veins pay; bare rock below the vein cut yields nothing
-        // (vein-only mode). Veins are rarer now but much richer (mineralValue).
-        if (G.DEV.veinOnly) {
-          if (rich >= w.veinRichCut) minerals += take * w.massPerCell * rich * rich * w.mineralValue;
+        if (isObs) {
+          // Obsidian pays out chunky minerals + crystals — the reward for
+          // earning the Plasma Drill. Bypasses vein-only gating.
+          minerals += take * w.massPerCell * ob.yieldMineralMult * w.mineralValue;
+          crystals += take * w.crystalPerCell * ob.yieldCrystalMult * (0.6 + rich);
         } else {
-          minerals += take * w.massPerCell * (0.015 + rich * rich * w.mineralValue);
+          // only mineral veins pay; bare rock below the vein cut yields nothing
+          // (vein-only mode). Veins are rarer now but much richer (mineralValue).
+          if (G.DEV.veinOnly) {
+            if (rich >= w.veinRichCut) minerals += take * w.massPerCell * rich * rich * w.mineralValue;
+          } else {
+            minerals += take * w.massPerCell * (0.015 + rich * rich * w.mineralValue);
+          }
+          if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
+          if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
         }
-        if (this.crystal[id]) crystals += take * w.crystalPerCell * (0.4 + rich);
-        if (this.special[id]) catalyst += take * w.catalystPerCell * (0.5 + rich);
       }
     }
-    return { minerals, crystals, catalyst };
+    return { minerals, crystals, catalyst, obsidianHit };
   };
 
   World.prototype.densityAt = function (wx, wy) {
@@ -414,8 +474,9 @@
         if (d[id] <= th) continue;
         const rich = this.richness[id];
         const isCry = this.crystal[id],
-          isCat = this.special[id];
-        if (rich < cut && !isCry && !isCat) continue;
+          isCat = this.special[id],
+          isObs = this.obsidian[id];
+        if (rich < cut && !isCry && !isCat && !isObs) continue;
         const wx = this.worldX(i);
         // Soft edge: solid near the ship, then thin out (spotty) and dim toward
         // the rim, like the scan struggles to read deeper rock farther out.
@@ -435,7 +496,16 @@
         const dim = 0.3 + 0.7 * fade;
         const sx = (hw + (wx - camx) * scale) | 0;
         if (sx < -4 || sx > vw + 4) continue;
-        if (isCat) {
+        if (isObs) {
+          // obsidian: a chunky red block — reads as "special, can't touch this".
+          // Slow pulse so it draws the eye on the scope.
+          const tw = 0.6 + 0.4 * Math.sin(time * 2.2 + i * 0.9 + j * 1.1);
+          ctx.globalAlpha = (0.55 + 0.45 * tw) * dim;
+          ctx.fillStyle = COL.obsidianDot;
+          ctx.fillRect(sx - 1, sy - 1, 3, 3);
+          ctx.fillRect(sx, sy - 2, 1, 5);
+          ctx.fillRect(sx - 2, sy, 5, 1);
+        } else if (isCat) {
           // catalyst: bright white sparkle that twinkles
           const tw = 0.55 + 0.45 * Math.sin(time * 5 + i * 2.3 + j * 1.7);
           ctx.globalAlpha = (0.4 + 0.6 * tw) * dim;

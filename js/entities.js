@@ -92,7 +92,8 @@
       }
     }
     if (hit) {
-      const got = world.carve(hx, hy, stats.carveR, power * dt);
+      const got = world.carve(hx, hy, stats.carveR, power * dt, { plasmaDrill: Eco.ownsAugment(game.state, "plasmaDrill") });
+      if (got.obsidianHit) game._noteObsidianGlance(hx, hy);
       // Refinery (try-it structure): mining within its range gets a yield boost.
       let refMult = 1;
       const rf = CFG.structures && CFG.structures.refinery;
@@ -374,6 +375,7 @@
       if (fTwin) augDrain += ad.twin;
       if (fBurst) augDrain += ad.burst;
       if (fAuto) augDrain += ad.auto;
+      if (owns("plasmaDrill")) augDrain += ad.plasmaDrill;
     }
     this._augDrain = augDrain;
 
@@ -421,7 +423,7 @@
   }
 
   // Sample nearby solid rock and pick the richest cell to dig toward (veins).
-  Bot.prototype._findVein = function (world, bstats) {
+  Bot.prototype._findVein = function (world, bstats, hasDrill) {
     this.retarget = CFG.bot.retargetTime;
     const reach = bstats.botReach,
       R2 = world.radius * world.radius;
@@ -437,9 +439,12 @@
       const gi = U.clamp(Math.round((px + world.radius) / world.cell), 0, world.NX);
       const gj = U.clamp(Math.round((py + world.radius) / world.cell), 0, world.NY);
       const id = gj * world.P + gi;
+      // Skip obsidian cells the player can't break — bots inherit the same gate.
+      if (world.obsidian[id] && !hasDrill) continue;
       let v = world.richness[id];
       if (world.crystal[id]) v += 0.6;
       if (world.special[id]) v += 1.2;
+      if (world.obsidian[id]) v += 0.9;
       const score = v - r / (reach * 3);
       if (score > bestScore) {
         bestScore = score;
@@ -471,6 +476,7 @@
 
   Bot.prototype.update = function (dt, bstats, yieldMult, world, game) {
     const home = this.factory;
+    const hasDrill = Eco.ownsAugment(game.state, "plasmaDrill");
     if (this.beamT > 0) this.beamT -= dt;
 
     if (this.mode === "return") {
@@ -493,7 +499,7 @@
     const standoff = bot.standoff * bstats.sqrtI;
     const mineReach = bot.mineReach * bstats.sqrtI;
     this.retarget -= dt;
-    if (!this.target || (this.phase === "travel" && this.retarget <= 0)) this._findVein(world, bstats);
+    if (!this.target || (this.phase === "travel" && this.retarget <= 0)) this._findVein(world, bstats, hasDrill);
 
     if (this.phase === "travel") {
       // head toward the target vein (or outward if none found)
@@ -563,7 +569,7 @@
           const ax = this.x + hx * cd,
             ay = this.y + hy * cd;
           const pm = game.pulseMult ? game.pulseMult() : 1;
-          const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower);
+          const got = world.carve(ax, ay, bstats.botCarveR, bstats.botPower, { plasmaDrill: hasDrill });
           this.carry.m += got.minerals * yieldMult * pm;
           this.carry.c += got.crystals * yieldMult * pm;
           this.carry.k += got.catalyst * yieldMult * pm;

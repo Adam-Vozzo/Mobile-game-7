@@ -384,6 +384,21 @@
     const s = 6 + Math.random() * 16;
     this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.35 + Math.random() * 0.4, max: 1.2, c: COL.dim });
   };
+  // Visual + (one-time) toast when the player's beam glances off obsidian.
+  // Triggered every frame the beam is on the rock, so we throttle both: the
+  // spark spawn is probabilistic, the toast fires once per session.
+  Game.prototype._noteObsidianGlance = function (x, y) {
+    if (this.particles.length < 240 && Math.random() < 0.6) {
+      const a = Math.random() * TAU;
+      const s = 30 + Math.random() * 40;
+      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.35, max: 0.5, c: COL.obsidianDot });
+    }
+    if (!this._toldAboutObsidian) {
+      this._toldAboutObsidian = true;
+      G.UI.toast("Obsidian — your beam glances off. Research the Plasma Drill at the Shipyard.", 5200);
+    }
+  };
+
   Game.prototype.spawnDeposit = function (x, y) {
     for (let i = 0; i < 4; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5);

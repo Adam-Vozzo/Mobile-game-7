@@ -456,6 +456,9 @@ body {
 .gloss-ic.c-min {
   color: var(--mineral);
 }
+.gloss-ic.c-obs {
+  color: #ff3a0a;
+}
 
 /* tabs */
 #modal-tabs {

@@ -1,6 +1,6 @@
 // CORE service worker — makes the game installable + playable offline.
 // Bump VERSION on every build so a fresh deploy replaces the old cache.
-const VERSION = "core-b30";
+const VERSION = "core-b31";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();

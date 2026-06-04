@@ -23,6 +23,7 @@
       mineralDot: "#ff9a2e",
       crystalDot: "#ffe2a6",
       catalystDot: "#fffdf2",
+      obsidianDot: "#ff3a0a",
       beam: "#ffcf9a",
       hud: "#ff9a36",
       hudDim: "#8a5526",
@@ -145,6 +146,7 @@
       twin: 2.5, // while firing
       burst: 1.5, // while firing
       auto: 1.5, // while firing
+      plasmaDrill: 4.0, // while firing on obsidian
     },
 
     // ----- economy: upgrade costs (geometric). catalyst gates Influence. -----
@@ -167,6 +169,11 @@
       botPower: { minerals: 45, growth: 1.55 },
       botCapacity: { minerals: 50, crystals: 1, growth: 1.55, crystalGrowth: 1.5 },
     },
+
+    // ----- obsidian: rock tagged as un-mineable until Plasma Drill is researched.
+    // Seeded patches (small clusters of cells) the player encounters while exploring.
+    // The first gear-gate: a place you can't go until you've earned the right tool.
+    obsidian: { patches: 6, patchR: 30, minR: 260, maxR: 1600, yieldMineralMult: 2.6, yieldCrystalMult: 1.4 },
 
     // ----- loose ore pickups (spawned when cargo is full) -----
     pickup: { pullRange: 95, mergeRange: 16, maxCount: 90, chunk: 0.22 },
@@ -261,5 +268,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b30";
+  G.BUILD = "2026-06-04 · b31";
 })(window.G);

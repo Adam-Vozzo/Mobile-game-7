@@ -146,6 +146,7 @@
       tiers: [{ cost: { minerals: 150, crystals: 4 } }, { cost: { minerals: 320, crystals: 9 } }, { cost: { minerals: 560, crystals: 16 } }],
     },
     { id: "flashlight", name: "Floodlight", desc: "A hull lamp that lights the dark automatically as you roam far from the core.", cost: { minerals: 200, crystals: 6 } },
+    { id: "plasmaDrill", name: "Plasma Drill", desc: "A hardened plasma tip that bites through obsidian rock — the dark red veins your beam glances off of. Without it, those veins are sealed.", cost: { minerals: 280, crystals: 9 } },
     // special — recovered from wrecks
     { id: "phaseDrive", name: "Phase Drive", desc: "Fly through solid rock at full speed.", cost: { minerals: 600, crystals: 20, catalyst: 5 }, special: true },
     { id: "siphon", name: "Siphon Array", desc: "Pull loose ore to your ship from anywhere.", cost: { minerals: 500, crystals: 18, catalyst: 4 }, special: true },
@@ -239,6 +240,7 @@
     { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at a base (fast) or factory (slow)." },
     { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to a base or factory to deposit it." },
     { glyph: "⌖", cls: "c-cry", name: "Wreck", desc: "Ships buried in the rock. Dig one free, then tap it to salvage — unlocks a special augment at your Shipyard." },
+    { glyph: "▪", cls: "c-obs", name: "Obsidian", desc: "Dark red veins of hardened rock the basic mining beam glances off. Research the Plasma Drill augment at the Shipyard to break through." },
   ];
 
   // Developer experiment toggles (Settings menu). kind: style | play.
