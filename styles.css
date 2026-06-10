@@ -219,6 +219,34 @@ body {
   opacity: 0.9;
 }
 
+/* energy range readout: charge time left vs travel time home */
+#range {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(env(safe-area-inset-top, 0px) + 46px);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#range.show {
+  opacity: 0.85;
+}
+#range.danger {
+  color: #ff4338;
+  text-shadow: 0 0 6px rgba(255, 67, 56, 0.5);
+  animation: rangePulse 1s ease-in-out infinite;
+}
+@keyframes rangePulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 #toast {
   position: fixed;
   left: 50%;

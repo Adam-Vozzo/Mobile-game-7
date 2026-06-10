@@ -38,6 +38,7 @@
     this.heat = 0;
     this.overheated = false;
     this.brownout = false; // out of charge -> laser dead, augments dark, limp speed
+    this.drainRate = 0; // net energy/s being spent (0 while recharging)
   }
 
   // Free capacity, counting ore already credited + in flight + pending.
@@ -92,7 +93,8 @@
       }
     }
     if (hit) {
-      const got = world.carve(hx, hy, stats.carveR, power * dt);
+      const got = world.carve(hx, hy, stats.carveR, power * dt, stats.plasmaDrill);
+      if (got.blocked && !stats.plasmaDrill) game.noteObsidianHit();
       // Refinery (try-it structure): mining within its range gets a yield boost.
       let refMult = 1;
       const rf = CFG.structures && CFG.structures.refinery;
@@ -142,7 +144,7 @@
     // matches the render, and scales the floodlight's power draw. 0 if not owned.
     if (stats.flashlight) {
       const fc = CFG.flashlight;
-      this._flashLit = U.clamp((Math.hypot(this.x, this.y) / world.radius - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
+      this._flashLit = U.clamp((world.depthAt(this.x, this.y) - fc.startFrac) / (fc.fullFrac - fc.startFrac), 0, 1);
     } else {
       this._flashLit = 0;
     }
@@ -216,8 +218,10 @@
     const nx = Math.cos(this.angle),
       ny = Math.sin(this.angle);
     const dens = world.densityAt(this.x, this.y);
-    // center in solid terrain => slow, unless Hull Plating / Phase Drive
-    const rockMult = dens > T ? (owns("phaseDrive") ? 1 : owns("hullPlating") ? 0.35 : 0.1) : 1;
+    // center in solid terrain => slow, unless Hull Plating / Phase Drive.
+    // Obsidian resists everything — even the Phase Drive can't push through it.
+    const inObsidian = dens > T && world.obsidianAt(this.x, this.y);
+    const rockMult = dens > T ? (inObsidian ? 0.06 : owns("phaseDrive") ? 1 : owns("hullPlating") ? 0.35 : 0.1) : 1;
     this.vx += nx * stats.accel * moveMult * rockMult * thrust * dt;
     this.vy += ny * stats.accel * moveMult * rockMult * thrust * dt;
 
@@ -341,9 +345,10 @@
       this._pend = { m: 0, c: 0, k: 0 };
     }
 
-    // --- deposit cargo gradually at base/factory (motes flow ship -> source) ---
+    // --- deposit cargo gradually at BASE only (motes flow ship -> base).
+    // Factories/beacons recharge you but don't take ore — hauls end at home.
     const load = this.cargo.m + this.cargo.c + this.cargo.k;
-    if (src && load > 0) {
+    if (this.nearBase && load > 0) {
       const take = Math.min(load, (this.maxCargo + 24) * (owns("tractor") ? 2 : 1) * dt); // ~1s (0.5s with Tractor)
       const f = take / load;
       const dm = this.cargo.m * f,
@@ -353,7 +358,7 @@
       this.cargo.c -= dc;
       this.cargo.k -= dk;
       game.addResources(dm, dc, dk, false);
-      game.spawnDepositMote(this.x, this.y, src.x, src.y);
+      game.spawnDepositMote(this.x, this.y, base.x, base.y);
     } else if (DEV.magnet && load > 0) {
       game.addResources(this.cargo.m, this.cargo.c, this.cargo.k, false);
       this.cargo.m = this.cargo.c = this.cargo.k = 0;
@@ -378,15 +383,19 @@
     this._augDrain = augDrain;
 
     // --- energy ---
+    // drainRate: net energy/s being spent right now (for the range readout).
+    let drain = 0;
+    if (thrust > 0.05) drain += P.energyMove * thrust;
+    if (firing) drain += P.energyLaser;
+    drain += augDrain;
+    if (owns("recharger")) drain -= CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge;
+    this.drainRate = src || DEV.infiniteEnergy ? 0 : drain;
     if (DEV.infiniteEnergy) {
       this.energy = this.maxEnergy;
     } else if (src) {
       this.energy += rate * DEV.recharge * dt;
     } else {
-      if (owns("recharger")) this.energy += CFG.player.energyRecharge * P.rechargerFrac * DEV.recharge * dt; // passive recharge away from base
-      if (thrust > 0.05) this.energy -= P.energyMove * thrust * dt;
-      if (firing) this.energy -= P.energyLaser * dt;
-      this.energy -= augDrain * dt;
+      this.energy -= drain * dt;
     }
     if (this.energy < 0) this.energy = 0;
     if (this.energy > this.maxEnergy) this.energy = this.maxEnergy;
@@ -640,10 +649,10 @@
     for (let i = 0; i < this.bots.length; i++) this.bots[i].update(dt, this.botStats, game.stats.yield, game.world, game);
   };
 
-  // ---------------- Base ----------------
-  function Base() {
-    this.x = 0;
-    this.y = 0;
+  // ---------------- Base (home: the only place cargo deposits) ----------------
+  function Base(x, y) {
+    this.x = x || 0;
+    this.y = y || 0;
     this.panel = "base";
     this.r = 18;
     this.spin = 0;

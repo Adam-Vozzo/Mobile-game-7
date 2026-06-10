@@ -1,4 +1,4 @@
-// localStorage persistence (including the carved terrain) + offline income.
+// localStorage persistence (including the carved terrain).
 (function (G) {
   "use strict";
 
@@ -26,7 +26,7 @@
       const u8 = new Uint8Array(dens.length);
       for (let i = 0; i < dens.length; i++) u8[i] = Math.round(dens[i] * 255);
       const data = {
-        v: 2,
+        v: 3,
         t: Date.now(),
         seed: g.world.seed,
         econ: g.state,

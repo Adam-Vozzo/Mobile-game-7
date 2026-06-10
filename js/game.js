@@ -23,7 +23,6 @@
     this._secTimer = 0;
     this._saveTimer = 0;
     this._hintTimer = 0;
-    this.won = false;
     this.time = 0;
     this._pulseT = 20; // seconds to next core pulse
     this._pulseActive = 0; // seconds of pulse remaining
@@ -60,8 +59,9 @@
 
   Game.prototype.startNew = function () {
     this.world = new G.World((Math.random() * 1e9) >>> 0);
-    this.base = new G.Base();
-    this.player = new G.Player(0, 0);
+    const bp = this.world.basePos();
+    this.base = new G.Base(bp.x, bp.y);
+    this.player = new G.Player(bp.x, bp.y);
     this.factories = [];
     this.structures = [];
     this.shipyard = null;
@@ -69,15 +69,19 @@
     this.recomputeStats();
     // Start with a banked overcharge that drains naturally during play.
     this.player.energy = this.stats.energyMax;
-    G.UI.toast("Steer with the left side. Mine glowing veins. Stay near BASE to recharge & upgrade.", 6500);
+    G.UI.toast("Steer with the left side. Mine glowing veins — richer ore lies DEEPER. Return to BASE to deposit & recharge.", 6500);
   };
 
-  // Deterministic wreck placement from the world seed (buried in rock).
+  // Deterministic wreck placement from the world seed (buried in rock, away
+  // from the starting base). Deep wrecks get sealed inside an obsidian shell —
+  // their beacons still pulse, but only the Plasma Drill gets you in.
   Game.prototype.genWrecks = function (salvagedFlags) {
     this.wrecks = [];
     const w = this.world,
       rng = U.mulberry32((w.seed ^ 0x9e3779b9) >>> 0);
     const R = w.radius;
+    const bp = w.basePos();
+    const ob = w.cfg.obsidian;
     let i = 0;
     let guard = 0;
     while (i < CFG.wreck.count && guard++ < 4000) {
@@ -86,8 +90,13 @@
       const x = Math.cos(a) * r,
         y = Math.sin(a) * r;
       if (w.densityAt(x, y) < w.cfg.threshold) continue; // want it buried in rock
+      if (U.dist(x, y, bp.x, bp.y) < 300) continue; // not on the base's doorstep
       const wr = new G.Wreck(x, y, i % G.Economy.SPECIAL_AUGMENTS.length);
       if (salvagedFlags && salvagedFlags[i]) wr.salvaged = true;
+      if (w.depthAt(x, y) >= ob.sealMinDepth) {
+        w.sealAnnulus(x, y, ob.sealR, ob.sealR + ob.sealW);
+        wr.sealed = true;
+      }
       this.wrecks.push(wr);
       i++;
     }
@@ -104,10 +113,15 @@
     if (this.state.unlocked == null) this.state.unlocked = {};
     for (const k in def.levels) if (this.state.levels[k] == null) this.state.levels[k] = 0;
     this.world = new G.World(data.seed >>> 0);
+    // Wrecks (and their obsidian seals) are re-derived from the seed on the
+    // fresh terrain BEFORE the saved density overwrites it, so seal shells
+    // the player has already drilled stay drilled.
+    this.genWrecks(data.wrecksSalvaged);
     if (data.density) G.Save.applyDensity(this.world, data.density);
     if (typeof data.removed === "number") this.world.removedTotal = data.removed;
-    this.base = new G.Base();
-    this.player = new G.Player(data.player ? data.player.x : 0, data.player ? data.player.y : 0);
+    const bp = this.world.basePos();
+    this.base = new G.Base(bp.x, bp.y);
+    this.player = new G.Player(data.player ? data.player.x : bp.x, data.player ? data.player.y : bp.y);
     if (data.player) this.player.angle = data.player.angle;
     this.factories = [];
     this.structures = [];
@@ -126,20 +140,10 @@
       for (const st of data.structures) this.structures.push(new G.Structure(st.x, st.y, st.kind));
     }
     this.shipyard = data.shipyard ? new G.Shipyard(data.shipyard.x, data.shipyard.y) : null;
-    this.genWrecks(data.wrecksSalvaged);
     this.player.energy = data.energy != null ? data.energy : this.stats.energyMax;
     if (data.cargo) this.player.cargo = data.cargo;
     this.botIncomeEMA = data.botIncome || 0;
-    const elapsed = U.clamp((Date.now() - (data.t || Date.now())) / 1000, 0, 8 * 3600);
-    if (elapsed > 5 && this.botIncomeEMA > 0) {
-      const gained = this.botIncomeEMA * elapsed * 0.6;
-      if (gained >= 1) {
-        this.state.minerals += gained;
-        this.state.crystals += gained * 0.015;
-        const mins = Math.floor(elapsed / 60);
-        G.UI.toast("Bots mined ◈" + U.formatNum(gained) + " while away (" + (mins > 0 ? mins + "m" : Math.floor(elapsed) + "s") + ")", 5000);
-      }
-    }
+    // (Offline/idle income was cut — wrong genre. The world waits for you.)
   };
 
   Game.prototype.recomputeStats = function () {
@@ -221,11 +225,13 @@
   };
 
   // Salvage a wreck that's been dug free -> unlock its special augment.
+  // Salvage value scales with depth: the deep, sealed wrecks pay the most.
   Game.prototype.salvageWreck = function (wr) {
     if (wr.salvaged) return;
     wr.salvaged = true;
     const r = CFG.wreck.reward;
-    this.addResources(r.minerals, r.crystals, r.catalyst, false);
+    const mult = 0.6 + 1.6 * this.world.depthAt(wr.x, wr.y);
+    this.addResources(Math.round(r.minerals * mult), Math.round(r.crystals * mult), Math.round(r.catalyst * mult), false);
     const augId = G.Economy.SPECIAL_AUGMENTS[wr.type];
     const def = G.Economy.augmentDef(augId);
     const first = !this.state.unlocked[augId];
@@ -234,6 +240,32 @@
     G.UI.updateHUD(this);
     if (first) G.UI.toast("Wreck salvaged! Unlocked augment: " + def.name + " — research it at the Shipyard.", 5000);
     else G.UI.toast("Wreck salvaged — bonus resources recovered.", 3000);
+  };
+
+  // Out of charge in the deep: a tow drone hauls you home, but it jettisons
+  // a share of your cargo to manage the load. The risk side of expeditions.
+  Game.prototype.emergencyTow = function () {
+    const p = this.player,
+      c = p.cargo;
+    const loss = CFG.player.towCargoLoss;
+    c.m *= 1 - loss;
+    c.c *= 1 - loss;
+    c.k *= 1 - loss;
+    p.incoming.m = p.incoming.c = p.incoming.k = 0;
+    p.x = this.base.x;
+    p.y = this.base.y + 24;
+    p.vx = p.vy = 0;
+    p.energy = this.stats.energyMax * CFG.player.towEnergyFrac;
+    p.brownout = false;
+    this.cam.snap(p.x, p.y, this.stats.influence, this.iw);
+    G.UI.toast("Emergency tow — " + Math.round(loss * 100) + "% of your cargo was jettisoned on the way home.", 4200);
+  };
+
+  // Throttled hint when the laser glances off obsidian without the drill.
+  Game.prototype.noteObsidianHit = function () {
+    if (this._obsHintT != null && this.time - this._obsHintT < 18) return;
+    this._obsHintT = this.time;
+    G.UI.toast("OBSIDIAN — your laser can't cut this glassrock. Research the PLASMA DRILL at the Shipyard.", 4200);
   };
 
   // Nearest unmined Catalyst vein to a point (cell scan, capped). For the
@@ -273,37 +305,15 @@
     G.UI.toast("Factory deployed. It assembles & upgrades its own bots.", 3000);
   };
 
-  Game.prototype.ascend = function () {
-    const bonus = 0.5;
-    const ascends = (this.state.ascends || 0) + 1;
-    const yieldMult = (this.state.yieldMult || 1) * (1 + bonus);
-    this.state = Eco.defaultState();
-    this.state.ascends = ascends;
-    this.state.yieldMult = yieldMult;
-    this.world = new G.World((Math.random() * 1e9) >>> 0);
-    this.player = new G.Player(0, 0);
-    this.factories = [];
-    this.structures = [];
-    this.shipyard = null;
-    this.genWrecks();
-    this.particles = [];
-    this.pickups = [];
-    this.cable.active = false;
-    this.won = false;
-    this.recomputeStats();
-    this.player.energy = this.stats.energyMax;
-    this.cam.snap(0, 0, this.stats.influence, this.iw);
-    G.UI.close();
-    G.UI.updateHUD(this);
-    G.UI.toast("ASCENDED x" + ascends + " — permanent +" + Math.round(bonus * 100) + "% yield. New core seeded.", 6000);
-  };
+  // (Ascend/prestige was cut — wrong genre fit. The world persists.)
 
   Game.prototype.resetGame = function () {
     G.Save.clear();
     this.state = Eco.defaultState();
     this.world = new G.World((Math.random() * 1e9) >>> 0);
-    this.base = new G.Base();
-    this.player = new G.Player(0, 0);
+    const bp = this.world.basePos();
+    this.base = new G.Base(bp.x, bp.y);
+    this.player = new G.Player(bp.x, bp.y);
     this.factories = [];
     this.structures = [];
     this.shipyard = null;
@@ -313,11 +323,10 @@
     this.cable.active = false;
     this.botIncomeEMA = 0;
     this._botAccum = 0;
-    this.won = false;
     this.time = 0;
     this.recomputeStats();
     this.player.energy = this.stats.energyMax;
-    this.cam.snap(0, 0, this.stats.influence, this.iw);
+    this.cam.snap(bp.x, bp.y, this.stats.influence, this.iw);
     G.UI.close();
     G.UI.updateHUD(this);
     G.UI.toast("Progress reset. New core seeded.", 4000);
@@ -345,11 +354,14 @@
     G.DEV.biome = id;
     this.world = new G.World((Math.random() * 1e9) >>> 0);
     this.genWrecks();
-    this.player.x = 0;
-    this.player.y = 0;
+    const bp = this.world.basePos();
+    this.base.x = bp.x;
+    this.base.y = bp.y;
+    this.player.x = bp.x;
+    this.player.y = bp.y;
     this.player.vx = this.player.vy = 0;
     this.recomputeStats();
-    this.cam.snap(0, 0, this.stats.influence, this.iw);
+    this.cam.snap(bp.x, bp.y, this.stats.influence, this.iw);
     G.Save.save(this);
     G.UI.updateHUD(this);
     if (G.UI.open) G.UI.refresh(this);
@@ -588,6 +600,11 @@
     return best;
   };
 
+  // Tow is offered while browned out with no recharge source in reach.
+  Game.prototype.towAvailable = function () {
+    return this.player.brownout && !this.player.rechargeSource;
+  };
+
   Game.prototype.handleInput = function () {
     if (this.input.consumeInteract()) {
       const wr = this._nearestWreck(this.player.x, this.player.y);
@@ -596,6 +613,8 @@
       else if (near) {
         if (G.UI.open && G.UI.building === near) G.UI.close();
         else G.UI.openPanel(near.panel, near, this);
+      } else if (this.towAvailable()) {
+        this.emergencyTow();
       } else {
         G.UI.toast("Move within range of a structure to access its controls.", 2200);
       }
@@ -605,6 +624,14 @@
     for (const tap of taps) {
       const ix = (tap.x / this.cssW) * this.iw;
       const iy = (tap.y / this.cssH) * this.ih;
+      // browned out: tapping your own ship calls the emergency tow
+      if (this.towAvailable()) {
+        const ps = this.cam.worldToScreen(this.player.x, this.player.y, this.iw, this.ih);
+        if (U.dist(ix, iy, ps.x, ps.y) < 20) {
+          this.emergencyTow();
+          continue;
+        }
+      }
       // tap an exposed wreck to salvage
       let wreck = null;
       for (const wr of this.wrecks) {
@@ -685,6 +712,19 @@
       this._lastNearBase = this.player.nearBase;
       G.UI.setBuildEnabled(this.player.nearBase);
     }
+    // Trip clock (for tuning the expedition rhythm): time spent away from base
+    // per round trip. Surfaced in the dev FPS readout.
+    if (!frozen) {
+      if (!this.player.nearBase) {
+        this._tripT = (this._tripT || 0) + dt;
+      } else {
+        if (this._tripT > 3) {
+          this.lastTripT = this._tripT;
+          this.tripCount = (this.tripCount || 0) + 1;
+        }
+        this._tripT = 0;
+      }
+    }
     if (this._lastBrownout !== this.player.brownout) {
       this._lastBrownout = this.player.brownout;
       if (G.UI.el && G.UI.el.hud) G.UI.el.hud.classList.toggle("brownout", this.player.brownout);
@@ -709,14 +749,11 @@
       const wr = this._nearestWreck(this.player.x, this.player.y);
       const near = this._nearestBuilding(this.player.x, this.player.y);
       const L = { base: "Tap base · or press E", factory: "Tap factory · or press E", shipyard: "Tap shipyard · or press E" };
-      G.UI.setPrompt(wr ? "Tap to salvage wreck · or press E" : near ? L[near.panel] : null);
+      G.UI.setPrompt(
+        wr ? "Tap to salvage wreck · or press E" : near ? L[near.panel] : this.towAvailable() ? "OUT OF CHARGE — tap your ship (or press E): emergency tow, −" + Math.round(CFG.player.towCargoLoss * 100) + "% cargo" : null
+      );
     } else {
       G.UI.setPrompt(null);
-    }
-
-    if (!this.won && this.world.carvedFraction() > 0.9) {
-      this.won = true;
-      G.UI.toast("CORE ASSIMILATED — open BASE to Ascend", 7000);
     }
   };
 
@@ -786,14 +823,15 @@
     this.drawParticles(ctx, iw, ih);
     ctx.restore();
 
-    // depth haze (dev): world-anchored radial darkening toward the crust
+    // depth haze (dev): world-anchored radial darkening toward the planet's
+    // heart — the deeper you dig (inward), the darker it gets.
     if (G.DEV.depthHaze) {
       const cc = this.cam.worldToScreen(0, 0, iw, ih);
       const rad = Math.max(8, this.world.radius * this.cam.scale);
-      const grd = ctx.createRadialGradient(cc.x, cc.y, rad * 0.08, cc.x, cc.y, rad);
-      grd.addColorStop(0, "rgba(0,0,0,0)");
-      grd.addColorStop(0.5, "rgba(0,0,0,0.35)");
-      grd.addColorStop(1, "rgba(0,0,0,0.96)");
+      const grd = ctx.createRadialGradient(cc.x, cc.y, 0, cc.x, cc.y, rad);
+      grd.addColorStop(0, "rgba(0,0,0,0.92)");
+      grd.addColorStop(0.45, "rgba(0,0,0,0.4)");
+      grd.addColorStop(0.85, "rgba(0,0,0,0)");
       ctx.save();
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, iw, ih);
@@ -801,8 +839,8 @@
     }
 
     // floodlight augment: warm pool of light around the ship, ramping in as you
-    // roam far from the core (so the dark depths stay readable). Drawn after the
-    // haze so it lights back through it. Goes dark during a brownout.
+    // descend toward the heart (so the dark depths stay readable). Drawn after
+    // the haze so it lights back through it. Goes dark during a brownout.
     if (this.stats.flashlight && !this.player.brownout) {
       const t = this.player._flashLit; // ramps in with distance from core (see Player.update)
       if (t > 0.01) {
@@ -1581,7 +1619,11 @@
     const fpsEl = G.UI.el && G.UI.el.fps;
     if (fpsEl) {
       if (G.DEV.showFps) {
-        fpsEl.textContent = Math.round(this.fps) + " fps";
+        // trip clocks ride along for tuning the expedition rhythm
+        let txt = Math.round(this.fps) + " fps";
+        if (this._tripT > 1) txt += " · out " + Math.round(this._tripT) + "s";
+        if (this.lastTripT) txt += " · trip " + Math.round(this.lastTripT) + "s ×" + (this.tripCount || 0);
+        fpsEl.textContent = txt;
         fpsEl.style.display = "block";
       } else if (fpsEl.style.display !== "none") {
         fpsEl.style.display = "none";
