@@ -29,6 +29,7 @@
       close: document.getElementById("modal-close"),
       toast: document.getElementById("toast"),
       prompt: document.getElementById("prompt"),
+      range: document.getElementById("range"),
       help: document.getElementById("btn-help"),
       settings: document.getElementById("btn-settings"),
       build: document.getElementById("btn-build"),
@@ -64,6 +65,23 @@
     this.el.factories.textContent = String(game.factories.length);
     this.el.influence.textContent = U.formatNum(game.stats.influence);
     this.el.core.textContent = (game.world.carvedFraction() * 100).toFixed(1) + "%";
+
+    // Range readout: seconds of charge left at the current burn vs the flight
+    // time home — the expedition-planning number. Red when the margin is thin.
+    const p = game.player,
+      rEl = this.el.range;
+    if (rEl) {
+      const drain = p.drainRate || 0;
+      if (!p.rechargeSource && !p.brownout && drain > 0.5) {
+        const tte = p.energy / drain;
+        const tHome = U.dist(p.x, p.y, game.base.x, game.base.y) / Math.max(1, game.stats.maxSpeed);
+        rEl.textContent = "⌁ " + Math.round(tte) + "s charge · " + Math.round(tHome) + "s to base";
+        rEl.classList.toggle("danger", tte < tHome * 1.4);
+        rEl.classList.add("show");
+      } else {
+        rEl.classList.remove("show", "danger");
+      }
+    }
   };
 
   UI.openPanel = function (panel, building, game) {

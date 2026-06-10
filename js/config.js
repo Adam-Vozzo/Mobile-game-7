@@ -32,6 +32,7 @@
       cable: "#d2701f",
       charge: "#ffe6b0",
       energy: "#ffffff",
+      obsidian: "#b08fe8", // the gear-gate glassrock: cold violet against the amber
     },
 
     // ----- renderer -----
@@ -46,6 +47,9 @@
     },
 
     // ----- world (the planet core: a disc of rock) -----
+    // GEOMETRY (settled): you start at the RIM and dig INWARD. "depth" = how
+    // close to the planet's center you are (0 at the crust, 1 at the heart).
+    // Richer ore, crystal, and catalyst all live deeper — distance is reward.
     world: {
       radius: 2600, // world units (2x the original core)
       cell: 8,
@@ -55,16 +59,36 @@
       densityBias: 0.62, // higher = more solid rock, lower = more open space
       richScale: 0.009,
       veinScale: 0.05,
-      crystalVeinCut: 0.74, // crystal-bearing rock
+      crystalVeinCut: 0.74, // crystal-bearing rock (mid-depth anchor; see depthOre)
       specialScale: 0.07,
-      specialVeinCut: 0.86, // rarer: catalyst-bearing rock
+      specialVeinCut: 0.86, // rarer: catalyst-bearing rock (mid-depth anchor)
       massPerCell: 4,
       crystalPerCell: 0.6,
       catalystPerCell: 0.25,
       mineralValue: 8, // payout multiplier for rich mineral veins (rarer but richer)
-      veinRichCut: 0.58, // richness at/above this = a paying mineral vein (also what the scanner reveals)
+      veinRichCut: 0.58, // richness at/above this = a paying mineral vein (mid-depth anchor)
       startPocket: 68,
       maxRenderCells: 160,
+      baseDepth: 0.86, // base sits at this fraction of the radius, near the crust
+      // Depth gradient: each vein cut is biased +rim at the crust and -deep at
+      // the heart (lerped by depth), so paying veins get denser as you descend.
+      // pay* scales every payout by depth, so deep veins are also richer.
+      depthOre: {
+        richRim: 0.09, richDeep: -0.14,
+        crystalRim: 0.12, crystalDeep: -0.12,
+        specialRim: 0.11, specialDeep: -0.12,
+        payRim: 0.75, payDeep: 1.7,
+      },
+      // Obsidian: unmineable glassrock (needs the Plasma Drill augment). Forms
+      // noise patches below minDepth and as sealed shells around deep wrecks.
+      obsidian: {
+        scale: 0.045,
+        cutRim: 0.96, cutDeep: 0.78, // noise cut lerped by depth (more obsidian deeper)
+        minDepth: 0.3, // no patches shallower than this
+        yield: 3.0, // minerals per carved cell mass (paid only with the drill)
+        sealR: 44, sealW: 16, // shell annulus around sealed wrecks
+        sealMinDepth: 0.35, // wrecks deeper than this get sealed
+      },
     },
 
     // ----- player ship (asteroids-style) -----
@@ -85,6 +109,10 @@
       brownoutRecover: 0.15, // exit brownout once energy climbs back to this fraction of max
       energyLow: 0.1, // <=10% -> bar pulses red
       cargo0: 300, // carrying capacity at influence 1 (scales with sqrtI)
+      // Emergency tow: browned-out far from home, you can call a tow back to
+      // base — it jettisons a fraction of your cargo and leaves a partial charge.
+      towCargoLoss: 0.5,
+      towEnergyFrac: 0.35,
     },
 
     // ----- mining laser (slightly less effective than before) -----
@@ -130,8 +158,8 @@
     // base0 = starter range with NO augment; range0 = augment L1; rangePerLevel = each level after.
     scanner: { base0: 60, range0: 105, rangePerLevel: 95, samplepx: 6.5 }, // world units * sqrtI; samplepx = dot spacing target (screen px)
 
-    // ----- floodlight augment: auto-lit pool when far from the core -----
-    flashlight: { range0: 120, startFrac: 0.42, fullFrac: 0.7 }, // light radius (world * sqrtI); ramps in between these fractions of core radius
+    // ----- floodlight augment: auto-lit pool in the deep dark -----
+    flashlight: { range0: 120, startFrac: 0.35, fullFrac: 0.65 }, // light radius (world * sqrtI); ramps in between these DEPTHS (0 rim -> 1 heart)
 
     // ----- augment power draw (energy/s, only away from a recharge source) -----
     // Total drain scales with how many augments are active & in use: passive
@@ -187,7 +215,7 @@
     },
 
     // ----- misc -----
-    save: { key: "coreforge.save.v2", interval: 8 },
+    save: { key: "coreforge.save.v3", interval: 8 }, // v3: rim-start geometry (v2 saves are center-start)
     interactRange: 70, // factory interaction radius (* sqrtI)
   };
 
@@ -261,5 +289,5 @@
   };
 
   // Build stamp (shown faintly bottom-left) to verify which build is live.
-  G.BUILD = "2026-05-28 · b30";
+  G.BUILD = "2026-06-10 · b31";
 })(window.G);

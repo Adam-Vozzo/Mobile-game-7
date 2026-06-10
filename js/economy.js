@@ -87,6 +87,7 @@
       scannerRange: (scanLvl > 0 ? CFG.scanner.range0 + CFG.scanner.rangePerLevel * (scanLvl - 1) : CFG.scanner.base0) * sI,
       flashlight: owns("flashlight"),
       flashRange: CFG.flashlight.range0 * sI,
+      plasmaDrill: owns("plasmaDrill"),
     };
   };
 
@@ -145,7 +146,13 @@
       leveled: 3,
       tiers: [{ cost: { minerals: 150, crystals: 4 } }, { cost: { minerals: 320, crystals: 9 } }, { cost: { minerals: 560, crystals: 16 } }],
     },
-    { id: "flashlight", name: "Floodlight", desc: "A hull lamp that lights the dark automatically as you roam far from the core.", cost: { minerals: 200, crystals: 6 } },
+    { id: "flashlight", name: "Floodlight", desc: "A hull lamp that lights the dark automatically as you descend toward the heart.", cost: { minerals: 200, crystals: 6 } },
+    {
+      id: "plasmaDrill",
+      name: "Plasma Drill",
+      desc: "A plasma-phase cutting head. The only thing that carves OBSIDIAN — the violet glassrock sealing the deep vaults.",
+      cost: { minerals: 480, crystals: 16 },
+    },
     // special — recovered from wrecks
     { id: "phaseDrive", name: "Phase Drive", desc: "Fly through solid rock at full speed.", cost: { minerals: 600, crystals: 20, catalyst: 5 }, special: true },
     { id: "siphon", name: "Siphon Array", desc: "Pull loose ore to your ship from anywhere.", cost: { minerals: 500, crystals: 18, catalyst: 4 }, special: true },
@@ -236,9 +243,10 @@
     { glyph: "⬡", cls: "c-fac", name: "Factories", desc: "Deployed factories. Each assembles and upgrades its own bots." },
     { glyph: "◎", cls: "c-inf", name: "Ship Class", desc: "Your hull class (max V). Higher class scales you up and extends your reach." },
     { glyph: "◌", cls: "c-core", name: "Core", desc: "Percent of the planet core you have assimilated." },
-    { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at a base (fast) or factory (slow)." },
-    { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to a base or factory to deposit it." },
-    { glyph: "⌖", cls: "c-cry", name: "Wreck", desc: "Ships buried in the rock. Dig one free, then tap it to salvage — unlocks a special augment at your Shipyard." },
+    { glyph: "▮", cls: "c-en", name: "Energy", desc: "The white bar right of your ship. Drains when acting outside recharge range; refill at BASE (fast) or a factory/beacon (slow). At zero you brown out — and can call an emergency tow for half your cargo." },
+    { glyph: "▤", cls: "c-cargo", name: "Cargo", desc: "The amber bar left of your ship. Mined ore loads here; return to BASE to deposit it — factories only recharge you." },
+    { glyph: "⌖", cls: "c-cry", name: "Wreck", desc: "Ships buried in the rock. Dig one free, then tap it to salvage — unlocks a special augment at your Shipyard. Deeper wrecks pay more; the deepest are sealed in obsidian." },
+    { glyph: "⬢", cls: "c-cry", name: "Obsidian", desc: "Violet glassrock your mining laser can't cut. It seals the deep vaults — research the PLASMA DRILL at the Shipyard to carve it." },
   ];
 
   // Developer experiment toggles (Settings menu). kind: style | play.
